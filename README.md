@@ -30,3 +30,4 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
    - Choose whether to remove cloze syntax.
    - Choose whether to delete the original notes.
 7. Click **OK** to merge.
+<img width="1042" height="948" alt="Screenshot_20260324_155101" src="https://github.com/user-attachments/assets/1e982659-cd5f-4f1a-a9cd-6371ca32a973" />
