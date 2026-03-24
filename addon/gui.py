@@ -127,7 +127,18 @@ class MergeDialog(QDialog):
         
         decks = self.mw.col.decks.all_names_and_ids()
         sorted_decks = sorted(decks, key=lambda x: x.name)
-        last_deck_id = config.get("last_target_deck_id")
+        
+        last_deck_id = None
+        try:
+            first_note = self.mw.col.get_note(self.selected_notes[0])
+            first_cards = first_note.cards()
+            if first_cards:
+                last_deck_id = first_cards[0].did
+        except Exception:
+            pass
+            
+        if last_deck_id is None:
+            last_deck_id = config.get("last_target_deck_id")
         
         for i, deck in enumerate(sorted_decks):
             self.target_deck_cb.addItem(deck.name, userData=deck.id)
@@ -149,6 +160,10 @@ class MergeDialog(QDialog):
             
         target_model = self.mw.col.models.get(model_id)
         
+        config = self.mw.addonManager.getConfig(self.addon_id) or {}
+        field_cache = config.get("field_map_cache", {})
+        model_cache = field_cache.get(str(model_id), {})
+        
         for f in target_model['flds']:
             f_name = f['name']
             
@@ -156,28 +171,33 @@ class MergeDialog(QDialog):
             cb.addItem("--- (None) ---", userData="")
             
             match_index = 0
+            cached_source = model_cache.get(f_name)
+            
             for i, src_f in enumerate(self.source_fields, start=1):
                 cb.addItem(src_f, userData=src_f)
                 
-                # Smart Matching
-                def is_smart_match(src, target):
-                    s = src.lower().replace(" ", "").replace("_", "")
-                    t = target.lower().replace(" ", "").replace("_", "")
-                    if s == t: return True
-                    if s and t and (s in t or t in s): return True
-                    
-                    synonym_groups = [
-                        {"front", "expression", "vocab", "word", "kanji", "hanzi", "text"},
-                        {"back", "meaning", "english", "translation", "definition"},
-                        {"reading", "kana", "pinyin", "furigana", "pronunciation"}
-                    ]
-                    for group in synonym_groups:
-                        if any(syn in s for syn in group) and any(syn in t for syn in group):
-                            return True
-                    return False
-                
-                if match_index == 0 and is_smart_match(src_f, f_name):
+                if cached_source and src_f == cached_source:
                     match_index = i
+                elif not cached_source:
+                    # Smart Matching
+                    def is_smart_match(src, target):
+                        s = src.lower().replace(" ", "").replace("_", "")
+                        t = target.lower().replace(" ", "").replace("_", "")
+                        if s == t: return True
+                        if s and t and (s in t or t in s): return True
+                        
+                        synonym_groups = [
+                            {"front", "expression", "vocab", "word", "kanji", "hanzi", "text"},
+                            {"back", "meaning", "english", "translation", "definition"},
+                            {"reading", "kana", "pinyin", "furigana", "pronunciation"}
+                        ]
+                        for group in synonym_groups:
+                            if any(syn in s for syn in group) and any(syn in t for syn in group):
+                                return True
+                        return False
+                    
+                    if match_index == 0 and is_smart_match(src_f, f_name):
+                        match_index = i
                     
             cb.setCurrentIndex(match_index)
             self.fields_layout.addRow(QLabel(f_name + ":"), cb)
@@ -193,6 +213,11 @@ class MergeDialog(QDialog):
         delete_originals = self.delete_originals_cb.isChecked()
         open_new_note = self.open_new_note_cb.isChecked()
 
+        config = self.mw.addonManager.getConfig(self.addon_id) or {}
+        field_cache = config.get("field_map_cache", {})
+        if str(target_model_id) not in field_cache:
+            field_cache[str(target_model_id)] = {}
+
         # Gather field mappings structure
         # target_field_name -> list of source_field_names
         field_mapping = {}
@@ -200,8 +225,12 @@ class MergeDialog(QDialog):
             chosen_source = cb.currentData()
             if chosen_source:
                 field_mapping[target_name] = [chosen_source]
+                field_cache[str(target_model_id)][target_name] = chosen_source
             else:
                 field_mapping[target_name] = []
+                field_cache[str(target_model_id)][target_name] = ""
+        
+        config["field_map_cache"] = field_cache
 
         # Check if at least one field is mapped
         has_mapping = any(len(sources) > 0 for sources in field_mapping.values())
@@ -223,7 +252,6 @@ class MergeDialog(QDialog):
 
         if new_note_id:
             # Save settings for next time
-            config = self.mw.addonManager.getConfig(self.addon_id) or {}
             config["last_separator"] = custom_separator
             config["last_remove_cloze"] = remove_cloze
             config["last_delete_originals"] = delete_originals
