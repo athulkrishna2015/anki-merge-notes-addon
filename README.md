@@ -1,6 +1,8 @@
 # Anki Merge Notes Add-on
 
 This Anki add-on allows you to easily merge multiple selected notes/cards directly from the Anki Browser into a single note. 
+Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
+github: https://github.com/athulkrishna2015/anki-merge-notes-addon
 
 ## Features
 
