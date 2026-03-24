@@ -152,25 +152,36 @@ class MergeDialog(QDialog):
         for f in target_model['flds']:
             f_name = f['name']
             
-            # Create a list widget for source fields to allow multiple selection
-            list_widget = QListWidget()
-            list_widget.setFixedHeight(80) # small list
-            list_widget.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+            cb = QComboBox()
+            cb.addItem("--- (None) ---", userData="")
             
-            for src_f in self.source_fields:
-                item = QListWidgetItem(src_f)
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            match_index = 0
+            for i, src_f in enumerate(self.source_fields, start=1):
+                cb.addItem(src_f, userData=src_f)
                 
-                # Auto-check if names match roughly
-                if src_f.lower() == f_name.lower():
-                    item.setCheckState(Qt.CheckState.Checked)
-                else:
-                    item.setCheckState(Qt.CheckState.Unchecked)
+                # Smart Matching
+                def is_smart_match(src, target):
+                    s = src.lower().replace(" ", "").replace("_", "")
+                    t = target.lower().replace(" ", "").replace("_", "")
+                    if s == t: return True
+                    if s and t and (s in t or t in s): return True
                     
-                list_widget.addItem(item)
+                    synonym_groups = [
+                        {"front", "expression", "vocab", "word", "kanji", "hanzi", "text"},
+                        {"back", "meaning", "english", "translation", "definition"},
+                        {"reading", "kana", "pinyin", "furigana", "pronunciation"}
+                    ]
+                    for group in synonym_groups:
+                        if any(syn in s for syn in group) and any(syn in t for syn in group):
+                            return True
+                    return False
                 
-            self.fields_layout.addRow(QLabel(f_name + ":"), list_widget)
-            self.target_field_widgets[f_name] = list_widget
+                if match_index == 0 and is_smart_match(src_f, f_name):
+                    match_index = i
+                    
+            cb.setCurrentIndex(match_index)
+            self.fields_layout.addRow(QLabel(f_name + ":"), cb)
+            self.target_field_widgets[f_name] = cb
 
     def accept(self):
         from .merger import perform_merge
@@ -185,13 +196,12 @@ class MergeDialog(QDialog):
         # Gather field mappings structure
         # target_field_name -> list of source_field_names
         field_mapping = {}
-        for target_name, list_widget in self.target_field_widgets.items():
-            checked_sources = []
-            for i in range(list_widget.count()):
-                item = list_widget.item(i)
-                if item.checkState() == Qt.CheckState.Checked:
-                    checked_sources.append(item.text())
-            field_mapping[target_name] = checked_sources
+        for target_name, cb in self.target_field_widgets.items():
+            chosen_source = cb.currentData()
+            if chosen_source:
+                field_mapping[target_name] = [chosen_source]
+            else:
+                field_mapping[target_name] = []
 
         # Check if at least one field is mapped
         has_mapping = any(len(sources) > 0 for sources in field_mapping.values())
