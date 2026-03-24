@@ -15,6 +15,14 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 
 ## Installation
 
+### From AnkiWeb (Recommended)
+1. Open Anki.
+2. Go to `Tools` -> `Add-ons`.
+3. Click `Get Add-ons...`.
+4. Paste the code: `1774874894`.
+5. Restart Anki.
+
+### Manual Installation
 1. Copy the `addon` folder contents to your Anki `addons21` directory, or use `make_ankiaddon.py` to build an `.ankiaddon` package.
 2. Restart Anki.
 
