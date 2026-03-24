@@ -43,3 +43,11 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
    - Choose whether to delete the original notes.
 7. Click **OK** to merge.
 <img width="1042" height="948" alt="Screenshot_20260324_155101" src="https://github.com/user-attachments/assets/1e982659-cd5f-4f1a-a9cd-6371ca32a973" />
+
+## Changelog
+
+**2026-03-25**
+- Added **Intelligent Field Matching** to automatically suggest the best source fields for each target field.
+- Added **Persistent Preferences** to remember your field mappings per Note Type, Target Deck, and other configurations across sessions.
+- Added **Auto-Detection** for the target deck automatically based on originally selected notes.
+- Fixed a bug where global configurations (custom separator, checkboxes) were not being persisted correctly on dialog load.
