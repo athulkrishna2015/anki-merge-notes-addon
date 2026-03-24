@@ -37,6 +37,10 @@ class ConfigDialog(QDialog):
         self.delete_cb.setChecked(self.config.get("default_delete_originals", False))
         form.addRow("", self.delete_cb)
         
+        self.open_new_note_cb = QCheckBox("Open/Select Newly Created Note in Browser")
+        self.open_new_note_cb.setChecked(self.config.get("default_open_new_note", True))
+        form.addRow("", self.open_new_note_cb)
+        
         config_layout.addLayout(form)
         config_layout.addStretch()
         config_tab.setLayout(config_layout)
@@ -110,6 +114,7 @@ class ConfigDialog(QDialog):
         self.config["default_separator"] = self.separator_input.text()
         self.config["default_remove_cloze"] = self.remove_cloze_cb.isChecked()
         self.config["default_delete_originals"] = self.delete_cb.isChecked()
+        self.config["default_open_new_note"] = self.open_new_note_cb.isChecked()
         
         self.mw.addonManager.writeConfig(self.addon_id, self.config)
         super().accept()

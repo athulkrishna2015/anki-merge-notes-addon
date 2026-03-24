@@ -8,7 +8,7 @@ def remove_cloze_syntax(text):
     # We replace it with the first captured group (the content)
     return re.sub(cloze_pattern, r'\1', text)
 
-def perform_merge(mw, target_model_id, field_mapping, custom_separator, remove_cloze, delete_originals, selected_note_ids):
+def perform_merge(mw, target_model_id, target_deck_id, field_mapping, custom_separator, remove_cloze, delete_originals, selected_note_ids):
     # Ensure all selected notes still exist
     selected_notes = []
     for nid in selected_note_ids:
@@ -22,20 +22,19 @@ def perform_merge(mw, target_model_id, field_mapping, custom_separator, remove_c
         showInfo("No valid notes found to merge.")
         return False
 
+    # Single Undo Setup
+    current_undo = None
+    if hasattr(mw.col, 'undo_status'):
+        current_undo = mw.col.undo_status().last_step
+    else:
+        mw.checkpoint("Merge Notes")
+
     # Create new note
     target_model = mw.col.models.get(target_model_id)
     new_note = mw.col.new_note(target_model)
 
-    # Gather tags and deck_id from first selected note
+    # Gather tags
     all_tags = set()
-    first_note = selected_notes[0]
-    
-    # Try to find the deck id of the first note's cards
-    deck_id = 1 # default deck
-    first_cards = first_note.cards()
-    if first_cards:
-        deck_id = first_cards[0].did
-        
     for note in selected_notes:
         for tag in note.tags:
             all_tags.add(tag)
@@ -72,7 +71,7 @@ def perform_merge(mw, target_model_id, field_mapping, custom_separator, remove_c
             new_note[f_name] = combined_text
 
     try:
-        mw.col.add_note(new_note, deck_id)
+        mw.col.add_note(new_note, target_deck_id)
     except Exception as e:
         showInfo(f"Error adding merged note: {e}")
         return False
@@ -89,4 +88,11 @@ def perform_merge(mw, target_model_id, field_mapping, custom_separator, remove_c
         except Exception as e:
             showInfo(f"Error deleting original notes: {e}")
 
-    return True
+    # Merge undos conditionally (2.1.45+)
+    if current_undo is not None and hasattr(mw.col, 'merge_undo_entries'):
+        try:
+            mw.col.merge_undo_entries(current_undo)
+        except Exception:
+            pass
+
+    return new_note.id

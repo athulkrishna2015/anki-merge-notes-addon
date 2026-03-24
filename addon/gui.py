@@ -16,12 +16,10 @@ class MergeDialog(QDialog):
         # Collect unique source fields
         self.source_fields = self.get_unique_source_fields()
         
-        # Read config
-        addon_id = __name__.split('.')[0]
-        config = self.mw.addonManager.getConfig(addon_id) or {}
-
         # UI Elements that contain state
+        self.addon_id = __name__.split('.')[0]
         self.target_model_cb = QComboBox()
+        self.target_deck_cb = QComboBox()
         self.fields_scroll_area = QScrollArea()
         self.fields_widget = QWidget()
         self.fields_layout = QFormLayout()
@@ -29,18 +27,28 @@ class MergeDialog(QDialog):
         self.separator_input = QLineEdit()
         self.remove_cloze_cb = QCheckBox("Remove cloze syntax from merged fields (keep only the text)")
         self.delete_originals_cb = QCheckBox("Delete original notes after merge")
+        self.open_new_note_cb = QCheckBox("Open/select newly created note in Browser")
         
         # Apply Config Defaults
-        self.separator_input.setText(config.get("default_separator", "<br><hr><br>"))
-        self.remove_cloze_cb.setChecked(config.get("default_remove_cloze", False))
-        self.delete_originals_cb.setChecked(config.get("default_delete_originals", False))
+        config = self.mw.addonManager.getConfig(self.addon_id) or {}
+        last_sep = config.get("last_separator", config.get("default_separator", "<br><hr><br>"))
+        self.separator_input.setText(last_sep)
+        
+        last_rem = config.get("last_remove_cloze", config.get("default_remove_cloze", False))
+        self.remove_cloze_cb.setChecked(last_rem)
+        
+        last_del = config.get("last_delete_originals", config.get("default_delete_originals", False))
+        self.delete_originals_cb.setChecked(last_del)
+        
+        last_open = config.get("last_open_new_note", config.get("default_open_new_note", True))
+        self.open_new_note_cb.setChecked(last_open)
 
 
         # Layout mapping target field name to its QListWidget containing checkboxes
         self.target_field_widgets = {}
 
         self.setup_ui()
-        self.populate_models()
+        self.populate_models_and_decks()
         self.update_fields_ui()
 
     def get_unique_source_fields(self):
@@ -64,6 +72,12 @@ class MergeDialog(QDialog):
         model_layout.addWidget(self.target_model_cb)
         layout.addLayout(model_layout)
 
+        # Target Deck Selection
+        deck_layout = QHBoxLayout()
+        deck_layout.addWidget(QLabel("Target Deck:"))
+        deck_layout.addWidget(self.target_deck_cb)
+        layout.addLayout(deck_layout)
+
         # Fields Mapping setup
         layout.addWidget(QLabel("<b>Field Mappings (Source -> Target):</b>"))
         
@@ -83,6 +97,9 @@ class MergeDialog(QDialog):
         
         self.delete_originals_cb.setChecked(False)
         options_layout.addRow("", self.delete_originals_cb)
+        
+        self.open_new_note_cb.setChecked(True)
+        options_layout.addRow("", self.open_new_note_cb)
 
         layout.addLayout(options_layout)
 
@@ -94,14 +111,28 @@ class MergeDialog(QDialog):
         
         self.setLayout(layout)
 
-    def populate_models(self):
+    def populate_models_and_decks(self):
+        config = self.mw.addonManager.getConfig(self.addon_id) or {}
+        
         self.target_model_cb.blockSignals(True)
         models = self.mw.col.models.all_names_and_ids()
-        # Sort models alphabetically
         sorted_models = sorted(models, key=lambda x: x.name)
-        for model in sorted_models:
+        last_model_id = config.get("last_target_model_id")
+        
+        for i, model in enumerate(sorted_models):
             self.target_model_cb.addItem(model.name, userData=model.id)
+            if model.id == last_model_id:
+                self.target_model_cb.setCurrentIndex(i)
         self.target_model_cb.blockSignals(False)
+        
+        decks = self.mw.col.decks.all_names_and_ids()
+        sorted_decks = sorted(decks, key=lambda x: x.name)
+        last_deck_id = config.get("last_target_deck_id")
+        
+        for i, deck in enumerate(sorted_decks):
+            self.target_deck_cb.addItem(deck.name, userData=deck.id)
+            if deck.id == last_deck_id:
+                self.target_deck_cb.setCurrentIndex(i)
 
     def update_fields_ui(self):
         # Clear existing layout
@@ -145,9 +176,11 @@ class MergeDialog(QDialog):
         from .merger import perform_merge
         
         target_model_id = self.target_model_cb.currentData()
+        target_deck_id = self.target_deck_cb.currentData()
         custom_separator = self.separator_input.text()
         remove_cloze = self.remove_cloze_cb.isChecked()
         delete_originals = self.delete_originals_cb.isChecked()
+        open_new_note = self.open_new_note_cb.isChecked()
 
         # Gather field mappings structure
         # target_field_name -> list of source_field_names
@@ -167,9 +200,10 @@ class MergeDialog(QDialog):
             if ret == QMessageBox.StandardButton.No:
                 return
 
-        success = perform_merge(
+        new_note_id = perform_merge(
             self.mw,
             target_model_id,
+            target_deck_id,
             field_mapping,
             custom_separator,
             remove_cloze,
@@ -177,11 +211,32 @@ class MergeDialog(QDialog):
             self.selected_notes
         )
 
-        if success:
+        if new_note_id:
+            # Save settings for next time
+            config = self.mw.addonManager.getConfig(self.addon_id) or {}
+            config["last_separator"] = custom_separator
+            config["last_remove_cloze"] = remove_cloze
+            config["last_delete_originals"] = delete_originals
+            config["last_open_new_note"] = open_new_note
+            config["last_target_model_id"] = target_model_id
+            config["last_target_deck_id"] = target_deck_id
+            self.mw.addonManager.writeConfig(self.addon_id, config)
+            
             super().accept()
-            # Need to refresh browser to show changes and remove deleted notes
+            # Refresh browser and optionally load the new note
             self.mw.reset()
-            self.browser.request_search()
+            if open_new_note:
+                try:
+                    if hasattr(self.browser, 'searchFor'):
+                        self.browser.searchFor(f"nid:{new_note_id}")
+                    else:
+                        self.browser.form.searchEdit.lineEdit().setText(f"nid:{new_note_id}")
+                        if hasattr(self.browser, 'onSearchActivated'):
+                            self.browser.onSearchActivated()
+                        else:
+                            self.browser.onSearch()
+                except Exception:
+                    pass
 
 def show_merge_dialog(browser: Browser, selected_notes):
     dialog = MergeDialog(browser, selected_notes)

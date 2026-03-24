@@ -1,5 +1,6 @@
 {
     "default_separator": "<br><hr><br>",
     "default_remove_cloze": false,
-    "default_delete_originals": false
+    "default_delete_originals": false,
+    "default_open_new_note": true
 }
