@@ -1,0 +1,31 @@
+# Anki Merge Notes Add-on
+
+This Anki add-on allows you to easily merge multiple selected notes/cards directly from the Anki Browser into a single note. 
+
+## Features
+
+- **Merge Multiple Notes:** Select two or more cards in the Anki Browser, right-click, and choose "Merge Notes...".
+- **Cross-Type Merging:** You can merge notes of different Note Types. The add-on extracts all available fields from the selected notes.
+- **Field Mapping:** A unified graphical interface lets you map any of the source fields to the target fields of your chosen Note Type.
+- **Custom Separator:** Choose a custom text or HTML separator (like `<br><hr><br>`) to insert between the merged contents.
+- **Remove Cloze Syntax:** Option to automatically strip out `{{c1::...}}` syntax from the combined text, keeping only the raw text, which is especially useful when merging cloze notes into a basic non-cloze note type.
+- **Automatic Cleanup:** Option to automatically delete the original source notes after a successful merge.
+- **Tags Preservation:** The newly merged note will inherit all tags from the original notes.
+
+## Installation
+
+1. Copy the `addon` folder contents to your Anki `addons21` directory, or use `make_ankiaddon.py` to build an `.ankiaddon` package.
+2. Restart Anki.
+
+## Usage
+
+1. Open the Anki **Browser**.
+2. Select two or more cards/notes.
+3. Right-click and select **"Merge Notes..."** from the context menu, or from the `Notes` menu in the menu bar.
+4. **Choose Target Note Type:** Select the model you want for the new merged note.
+5. **Map Fields:** For each target field, check the boxes of the source fields you want to combine into it.
+6. **Configure Options:** 
+   - Set a custom separator.
+   - Choose whether to remove cloze syntax.
+   - Choose whether to delete the original notes.
+7. Click **OK** to merge.
