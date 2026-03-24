@@ -13,6 +13,9 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 - **Remove Cloze Syntax:** Option to automatically strip out `{{c1::...}}` syntax from the combined text, keeping only the raw text, which is especially useful when merging cloze notes into a basic non-cloze note type.
 - **Automatic Cleanup:** Option to automatically delete the original source notes after a successful merge.
 - **Tags Preservation:** The newly merged note will inherit all tags from the original notes.
+- **Intelligent Field Matching:** Automatically suggests the best source field for each target field based on name similarity.
+- **Persistent Preferences:** The add-on remembers your field mappings per Note Type, selected Target Deck, custom separator, and other options across Anki sessions.
+- **Auto-Detection:** Automatically suggests the target deck based on the deck of your originally selected notes.
 
 ## Installation
 

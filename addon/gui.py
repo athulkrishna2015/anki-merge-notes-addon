@@ -89,16 +89,12 @@ class MergeDialog(QDialog):
         # Options layout
         options_layout = QFormLayout()
         
-        self.separator_input.setText("<br><hr><br>")
         options_layout.addRow("Custom Separator:", self.separator_input)
         
-        self.remove_cloze_cb.setChecked(False)
         options_layout.addRow("", self.remove_cloze_cb)
         
-        self.delete_originals_cb.setChecked(False)
         options_layout.addRow("", self.delete_originals_cb)
         
-        self.open_new_note_cb.setChecked(True)
         options_layout.addRow("", self.open_new_note_cb)
 
         layout.addLayout(options_layout)
