@@ -171,6 +171,7 @@ class MergeDialog(QDialog):
             cb.addItem("--- (None) ---", userData="")
             
             match_index = 0
+            best_score = -1
             cached_source = model_cache.get(f_name)
             
             for i, src_f in enumerate(self.source_fields, start=1):
@@ -178,13 +179,17 @@ class MergeDialog(QDialog):
                 
                 if cached_source and src_f == cached_source:
                     match_index = i
-                elif not cached_source:
-                    # Smart Matching
-                    def is_smart_match(src, target):
-                        s = src.lower().replace(" ", "").replace("_", "")
-                        t = target.lower().replace(" ", "").replace("_", "")
-                        if s == t: return True
-                        if s and t and (s in t or t in s): return True
+                    best_score = 1000 # Absolute highest priority
+                elif best_score < 1000:
+                    # Smart Matching Scoring
+                    def get_match_score(src, target):
+                        s = src.lower().strip()
+                        t = target.lower().strip()
+                        if s == t: return 100
+                        
+                        s_clean = s.replace(" ", "").replace("_", "")
+                        t_clean = t.replace(" ", "").replace("_", "")
+                        if s_clean == t_clean: return 90
                         
                         synonym_groups = [
                             {"front", "expression", "vocab", "word", "kanji", "hanzi", "text"},
@@ -192,11 +197,15 @@ class MergeDialog(QDialog):
                             {"reading", "kana", "pinyin", "furigana", "pronunciation"}
                         ]
                         for group in synonym_groups:
-                            if any(syn in s for syn in group) and any(syn in t for syn in group):
-                                return True
-                        return False
+                            if any(syn in s_clean for syn in group) and any(syn in t_clean for syn in group):
+                                return 50
+                        
+                        if s_clean and t_clean and (s_clean in t_clean or t_clean in s_clean): return 10
+                        return 0
                     
-                    if match_index == 0 and is_smart_match(src_f, f_name):
+                    score = get_match_score(src_f, f_name)
+                    if score > best_score and score > 0:
+                        best_score = score
                         match_index = i
                     
             cb.setCurrentIndex(match_index)
