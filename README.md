@@ -1,21 +1,22 @@
 # [Anki Merge Notes Add-on](https://github.com/athulkrishna2015/anki-merge-notes-addon)
 
-This Anki add-on allows you to easily merge multiple selected notes/cards directly from the Anki Browser into a single note. 
+This Anki add-on allows you to merge multiple selected notes/cards directly from the Anki Browser into a single note.
 
-Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894) 
+Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 
 ## Features
 
 - **Merge Multiple Notes:** Select two or more cards in the Anki Browser, right-click, and choose "Merge Notes...".
 - **Cross-Type Merging:** You can merge notes of different Note Types. The add-on extracts all available fields from the selected notes.
-- **Field Mapping:** A unified graphical interface lets you map any of the source fields to the target fields of your chosen Note Type.
+- **Multi-Source Field Mapping:** A unified graphical interface lets you map one or more source fields into each target field of your chosen Note Type.
 - **Custom Separator:** Choose a custom text or HTML separator (like `<br><hr><br>`) to insert between the merged contents.
 - **Remove Cloze Syntax:** Option to automatically strip out `{{c1::...}}` syntax from the combined text, keeping only the raw text, which is especially useful when merging cloze notes into a basic non-cloze note type.
 - **Automatic Cleanup:** Option to automatically delete the original source notes after a successful merge.
 - **Tags Preservation:** The newly merged note will inherit all tags from the original notes.
 - **Intelligent Field Matching:** Automatically suggests the best source field for each target field based on name similarity.
-- **Persistent Preferences:** The add-on remembers your field mappings per Note Type, selected Target Deck, custom separator, and other options across Anki sessions.
+- **Persistent Preferences:** The add-on remembers your field mappings per Note Type, selected Target Deck, custom separator, and other options across Anki sessions, including multi-source mappings.
 - **Auto-Detection:** Automatically suggests the target deck based on the deck of your originally selected notes.
+- **Safer Merge Validation:** Missing source notes or invalid target selections are detected before merge/delete actions are applied.
 
 ## Installation
 
@@ -36,7 +37,7 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 2. Select two or more cards/notes.
 3. Right-click and select **"Merge Notes..."** from the context menu, or from the `Notes` menu in the menu bar.
 4. **Choose Target Note Type:** Select the model you want for the new merged note.
-5. **Map Fields:** For each target field, check the boxes of the source fields you want to combine into it.
+5. **Map Fields:** For each target field, check one or more source fields you want to combine into it.
 6. **Configure Options:** 
    - Set a custom separator.
    - Choose whether to remove cloze syntax.
@@ -46,7 +47,12 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 
 ## Changelog
 
-**2026-03-25**
+**v1.1.0 - 2026-03-25**
+- Restored true multi-source field mapping in the merge dialog, matching the documented checkbox workflow.
+- Fixed stale-note handling so deleted or invalid selections are skipped safely before merge and delete actions run.
+- Improved merge validation for missing target note types/decks and made merged tag ordering deterministic.
+- Fixed cloze cleanup for multiline cloze content.
+- Added regression tests for version helpers and merge behavior.
 - Added **Intelligent Field Matching** to automatically suggest the best source fields for each target field.
 - Added **Persistent Preferences** to remember your field mappings per Note Type, Target Deck, and other configurations across sessions.
 - Added **Auto-Detection** for the target deck automatically based on originally selected notes.

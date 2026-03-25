@@ -1,7 +1,57 @@
-from aqt.qt import *
 from aqt import mw
-from aqt.utils import showInfo
 from aqt.browser import Browser
+from aqt.qt import *
+from aqt.utils import showInfo
+
+
+def match_field_score(source_field, target_field):
+    source = source_field.lower().strip()
+    target = target_field.lower().strip()
+    if source == target:
+        return 100
+
+    source_clean = source.replace(" ", "").replace("_", "")
+    target_clean = target.replace(" ", "").replace("_", "")
+    if source_clean == target_clean:
+        return 90
+
+    synonym_groups = [
+        {"front", "expression", "vocab", "word", "kanji", "hanzi", "text"},
+        {"back", "meaning", "english", "translation", "definition"},
+        {"reading", "kana", "pinyin", "furigana", "pronunciation"},
+    ]
+    for group in synonym_groups:
+        if any(syn in source_clean for syn in group) and any(
+            syn in target_clean for syn in group
+        ):
+            return 50
+
+    if source_clean and target_clean and (
+        source_clean in target_clean or target_clean in source_clean
+    ):
+        return 10
+
+    return 0
+
+
+def normalize_cached_sources(cached_value):
+    if isinstance(cached_value, str):
+        return [cached_value] if cached_value else []
+    if isinstance(cached_value, (list, tuple)):
+        return [str(value) for value in cached_value if value]
+    return []
+
+
+def filter_existing_note_ids(collection, note_ids):
+    valid_note_ids = []
+    for note_id in note_ids:
+        try:
+            collection.get_note(note_id)
+        except Exception:
+            continue
+        valid_note_ids.append(note_id)
+    return valid_note_ids
+
 
 class MergeDialog(QDialog):
     def __init__(self, browser: Browser, selected_notes, parent=None):
@@ -44,7 +94,7 @@ class MergeDialog(QDialog):
         self.open_new_note_cb.setChecked(last_open)
 
 
-        # Layout mapping target field name to its QListWidget containing checkboxes
+        # Layout mapping target field name to its QListWidget of source fields.
         self.target_field_widgets = {}
 
         self.setup_ui()
@@ -54,10 +104,13 @@ class MergeDialog(QDialog):
     def get_unique_source_fields(self):
         fields = set()
         for nid in self.selected_notes:
-            note = self.mw.col.get_note(nid)
+            try:
+                note = self.mw.col.get_note(nid)
+            except Exception:
+                continue
             for name in note.keys():
                 fields.add(name)
-        return sorted(list(fields))
+        return sorted(fields)
 
     def setup_ui(self):
         layout = QVBoxLayout()
@@ -109,8 +162,9 @@ class MergeDialog(QDialog):
 
     def populate_models_and_decks(self):
         config = self.mw.addonManager.getConfig(self.addon_id) or {}
-        
+
         self.target_model_cb.blockSignals(True)
+        self.target_model_cb.clear()
         models = self.mw.col.models.all_names_and_ids()
         sorted_models = sorted(models, key=lambda x: x.name)
         last_model_id = config.get("last_target_model_id")
@@ -123,6 +177,7 @@ class MergeDialog(QDialog):
         
         decks = self.mw.col.decks.all_names_and_ids()
         sorted_decks = sorted(decks, key=lambda x: x.name)
+        self.target_deck_cb.clear()
         
         last_deck_id = None
         try:
@@ -151,98 +206,140 @@ class MergeDialog(QDialog):
         self.target_field_widgets.clear()
         
         model_id = self.target_model_cb.currentData()
-        if not model_id:
+        if model_id is None:
             return
             
         target_model = self.mw.col.models.get(model_id)
+        if not target_model:
+            return
         
         config = self.mw.addonManager.getConfig(self.addon_id) or {}
         field_cache = config.get("field_map_cache", {})
         model_cache = field_cache.get(str(model_id), {})
-        
+
         for f in target_model['flds']:
             f_name = f['name']
-            
-            cb = QComboBox()
-            cb.addItem("--- (None) ---", userData="")
-            
-            match_index = 0
-            best_score = -1
-            cached_source = model_cache.get(f_name)
-            
-            for i, src_f in enumerate(self.source_fields, start=1):
-                cb.addItem(src_f, userData=src_f)
-                
-                if cached_source and src_f == cached_source:
-                    match_index = i
-                    best_score = 1000 # Absolute highest priority
-                elif best_score < 1000:
-                    # Smart Matching Scoring
-                    def get_match_score(src, target):
-                        s = src.lower().strip()
-                        t = target.lower().strip()
-                        if s == t: return 100
-                        
-                        s_clean = s.replace(" ", "").replace("_", "")
-                        t_clean = t.replace(" ", "").replace("_", "")
-                        if s_clean == t_clean: return 90
-                        
-                        synonym_groups = [
-                            {"front", "expression", "vocab", "word", "kanji", "hanzi", "text"},
-                            {"back", "meaning", "english", "translation", "definition"},
-                            {"reading", "kana", "pinyin", "furigana", "pronunciation"}
-                        ]
-                        for group in synonym_groups:
-                            if any(syn in s_clean for syn in group) and any(syn in t_clean for syn in group):
-                                return 50
-                        
-                        if s_clean and t_clean and (s_clean in t_clean or t_clean in s_clean): return 10
-                        return 0
-                    
-                    score = get_match_score(src_f, f_name)
-                    if score > best_score and score > 0:
+
+            list_widget = QListWidget()
+            list_widget.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+            list_widget.setAlternatingRowColors(True)
+            list_widget.setVerticalScrollMode(
+                QAbstractItemView.ScrollMode.ScrollPerPixel
+            )
+
+            cached_sources = set(normalize_cached_sources(model_cache.get(f_name)))
+            best_item = None
+            best_score = 0
+
+            for src_f in self.source_fields:
+                item = QListWidgetItem(src_f)
+                item.setFlags(
+                    item.flags()
+                    | Qt.ItemFlag.ItemIsEnabled
+                    | Qt.ItemFlag.ItemIsUserCheckable
+                )
+                item.setCheckState(
+                    Qt.CheckState.Checked
+                    if src_f in cached_sources
+                    else Qt.CheckState.Unchecked
+                )
+                list_widget.addItem(item)
+
+                if not cached_sources:
+                    score = match_field_score(src_f, f_name)
+                    if score > best_score:
                         best_score = score
-                        match_index = i
-                    
-            cb.setCurrentIndex(match_index)
-            self.fields_layout.addRow(QLabel(f_name + ":"), cb)
-            self.target_field_widgets[f_name] = cb
+                        best_item = item
+
+            if best_item is not None and not cached_sources:
+                best_item.setCheckState(Qt.CheckState.Checked)
+
+            if list_widget.count():
+                row_count = min(list_widget.count(), 4)
+                row_height = list_widget.sizeHintForRow(0)
+                if row_height > 0:
+                    frame_height = list_widget.frameWidth() * 2
+                    list_widget.setMinimumHeight(
+                        (row_height * row_count) + frame_height + 4
+                    )
+
+            self.fields_layout.addRow(QLabel(f"{f_name}:"), list_widget)
+            self.target_field_widgets[f_name] = list_widget
+
+    def get_checked_sources(self, list_widget):
+        checked_sources = []
+        for index in range(list_widget.count()):
+            item = list_widget.item(index)
+            if (
+                item.flags() & Qt.ItemFlag.ItemIsUserCheckable
+                and item.checkState() == Qt.CheckState.Checked
+            ):
+                checked_sources.append(item.text())
+        return checked_sources
+
+    def persist_dialog_state(
+        self,
+        target_model_id,
+        target_deck_id,
+        custom_separator,
+        remove_cloze,
+        delete_originals,
+        open_new_note,
+        field_mapping,
+    ):
+        config = self.mw.addonManager.getConfig(self.addon_id) or {}
+        field_cache = config.get("field_map_cache", {})
+        model_cache = field_cache.setdefault(str(target_model_id), {})
+        for target_name, source_fields in field_mapping.items():
+            model_cache[target_name] = list(source_fields)
+
+        config["field_map_cache"] = field_cache
+        config["last_separator"] = custom_separator
+        config["last_remove_cloze"] = remove_cloze
+        config["last_delete_originals"] = delete_originals
+        config["last_open_new_note"] = open_new_note
+        config["last_target_model_id"] = target_model_id
+        config["last_target_deck_id"] = target_deck_id
+        self.mw.addonManager.writeConfig(self.addon_id, config)
 
     def accept(self):
         from .merger import perform_merge
         
         target_model_id = self.target_model_cb.currentData()
         target_deck_id = self.target_deck_cb.currentData()
+
+        if target_model_id is None:
+            showInfo("Please choose a target note type.", parent=self)
+            return
+
+        if target_deck_id is None:
+            showInfo("Please choose a target deck.", parent=self)
+            return
+
         custom_separator = self.separator_input.text()
         remove_cloze = self.remove_cloze_cb.isChecked()
         delete_originals = self.delete_originals_cb.isChecked()
         open_new_note = self.open_new_note_cb.isChecked()
 
-        config = self.mw.addonManager.getConfig(self.addon_id) or {}
-        field_cache = config.get("field_map_cache", {})
-        if str(target_model_id) not in field_cache:
-            field_cache[str(target_model_id)] = {}
-
-        # Gather field mappings structure
-        # target_field_name -> list of source_field_names
         field_mapping = {}
-        for target_name, cb in self.target_field_widgets.items():
-            chosen_source = cb.currentData()
-            if chosen_source:
-                field_mapping[target_name] = [chosen_source]
-                field_cache[str(target_model_id)][target_name] = chosen_source
-            else:
-                field_mapping[target_name] = []
-                field_cache[str(target_model_id)][target_name] = ""
-        
-        config["field_map_cache"] = field_cache
+        for target_name, list_widget in self.target_field_widgets.items():
+            field_mapping[target_name] = self.get_checked_sources(list_widget)
 
-        # Check if at least one field is mapped
         has_mapping = any(len(sources) > 0 for sources in field_mapping.values())
         if not has_mapping:
             ret = QMessageBox.warning(self, "No Mappings", "You haven't mapped any fields. Merge anyway?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if ret == QMessageBox.StandardButton.No:
                 return
+
+        self.persist_dialog_state(
+            target_model_id,
+            target_deck_id,
+            custom_separator,
+            remove_cloze,
+            delete_originals,
+            open_new_note,
+            field_mapping,
+        )
 
         new_note_id = perform_merge(
             self.mw,
@@ -256,15 +353,6 @@ class MergeDialog(QDialog):
         )
 
         if new_note_id:
-            # Save settings for next time
-            config["last_separator"] = custom_separator
-            config["last_remove_cloze"] = remove_cloze
-            config["last_delete_originals"] = delete_originals
-            config["last_open_new_note"] = open_new_note
-            config["last_target_model_id"] = target_model_id
-            config["last_target_deck_id"] = target_deck_id
-            self.mw.addonManager.writeConfig(self.addon_id, config)
-            
             super().accept()
             # Refresh browser and optionally load the new note
             self.mw.reset()
@@ -282,5 +370,10 @@ class MergeDialog(QDialog):
                     pass
 
 def show_merge_dialog(browser: Browser, selected_notes):
-    dialog = MergeDialog(browser, selected_notes)
+    valid_selected_notes = filter_existing_note_ids(mw.col, selected_notes)
+    if not valid_selected_notes:
+        showInfo("The selected notes are no longer available.", parent=browser)
+        return
+
+    dialog = MergeDialog(browser, valid_selected_notes)
     dialog.exec()
