@@ -18,6 +18,16 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 - **Auto-Detection:** Automatically suggests the target deck based on the deck of your originally selected notes.
 - **Safer Merge Validation:** Missing source notes or invalid target selections are detected before merge/delete actions are applied.
 
+## ⚠️ Important: Review History & Duplicate Cards
+
+When you merge notes, the add-on creates a **newly created note with all "New" cards**. It is important to understand how this affects your study history:
+
+1. **No History Transfer:** Review history from the original cards is **not** transferred to the new merged cards.
+2. **Deletion of Original Notes:** If the "Delete original notes" option is enabled, the source notes and their associated cards (including all review history) are deleted.
+3. **Duplicate Cards:** If the "Delete original notes" option is disabled, the original notes remain intact, resulting in duplicates (the original cards with their history, and the new merged cards as "New" cards).
+
+**Recommendation:** This add-on is best suited for merging **unstudied (New) notes**. Use caution when merging notes that have active review history, as the newly generated cards will not inherit their progress.
+
 ## Installation
 
 ### From AnkiWeb (Recommended)
@@ -47,12 +57,14 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 
 ## Changelog
 
-**v1.1.0 - 2026-03-25**
+**2026-03-25**
 - Restored true multi-source field mapping in the merge dialog, matching the documented checkbox workflow.
 - Fixed stale-note handling so deleted or invalid selections are skipped safely before merge and delete actions run.
 - Improved merge validation for missing target note types/decks and made merged tag ordering deterministic.
 - Fixed cloze cleanup for multiline cloze content.
 - Added regression tests for version helpers and merge behavior.
+
+**2026-03-24**
 - Added **Intelligent Field Matching** to automatically suggest the best source fields for each target field.
 - Added **Persistent Preferences** to remember your field mappings per Note Type, Target Deck, and other configurations across sessions.
 - Added **Auto-Detection** for the target deck automatically based on originally selected notes.
