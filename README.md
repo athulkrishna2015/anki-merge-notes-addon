@@ -55,6 +55,13 @@ When you merge notes, the add-on creates a **newly created note with all "New" c
 7. Click **OK** to merge.
 <img width="1042" height="948" alt="Screenshot_20260324_155101" src="https://github.com/user-attachments/assets/1e982659-cd5f-4f1a-a9cd-6371ca32a973" />
 
+---
+## Support
+
+If you find this add-on useful, please consider supporting its development:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D01W6NQT)
+
 ## Changelog
 
 **2026-03-25**

@@ -1,6 +1,7 @@
 import os
 from aqt.qt import *
 from aqt import mw
+from aqt.webview import AnkiWebView
 
 class ConfigDialog(QDialog):
     def __init__(self, addon_id, parent=None):
@@ -48,11 +49,25 @@ class ConfigDialog(QDialog):
         # --- TAB 2: Support ---
         support_tab = QWidget()
         support_layout = QVBoxLayout()
-        
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
+
+        # Ko-fi Widget inside support tab
+        kofi_html = """
+        <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
+            <script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script>
+            <script type='text/javascript'>
+                kofiwidget2.init('Support me on Ko-fi', '#72a4f2', 'D1D01W6NQT');
+                kofiwidget2.draw();
+            </script>
+        </div>
+        """
+        self.kofi_widget = AnkiWebView(title="kofi_support")
+        self.kofi_widget.stdHtml(kofi_html)
+        self.kofi_widget.setMaximumHeight(120)
+        support_layout.addWidget(self.kofi_widget)
+
+
+        info_container = QWidget()
+        info_layout = QVBoxLayout(info_container)
         
         support_info = [
             ("UPI", "athulkrishnasv2015-2@okhdfcbank", "UPI.jpg"),
@@ -90,10 +105,11 @@ class ConfigDialog(QDialog):
             g_layout.addLayout(text_layout)
             
             group.setLayout(g_layout)
-            scroll_layout.addWidget(group)
-        
-        scroll_content.setLayout(scroll_layout)
-        scroll_area.setWidget(scroll_content)
+            info_layout.addWidget(group)
+       
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(info_container)
         support_layout.addWidget(scroll_area)
         support_tab.setLayout(support_layout)
         
