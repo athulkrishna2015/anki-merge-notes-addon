@@ -94,6 +94,10 @@ class MergeDialog(QDialog):
         self.preserve_review_history_cb = QCheckBox("Preserve review history on merged card")
         self.review_history_source_label = QLabel("Use History From:")
         self.review_history_card_cb = QComboBox()
+        self.review_history_warning_label = QLabel(
+            "Warning: preserving review history currently copies revlog entries "
+            "directly, so Undo may not fully revert the copied history rows."
+        )
         self.open_new_note_cb = QCheckBox("Open/select newly created note in Browser")
         
         # Apply Config Defaults
@@ -176,6 +180,8 @@ class MergeDialog(QDialog):
         self.preserve_review_history_cb.toggled.connect(self.update_review_history_controls)
         options_layout.addRow("", self.preserve_review_history_cb)
         options_layout.addRow(self.review_history_source_label, self.review_history_card_cb)
+        self.review_history_warning_label.setWordWrap(True)
+        options_layout.addRow("", self.review_history_warning_label)
         
         options_layout.addRow("", self.open_new_note_cb)
 
@@ -240,6 +246,7 @@ class MergeDialog(QDialog):
         self.review_history_source_label.setVisible(is_visible)
         self.review_history_card_cb.setVisible(is_visible)
         self.review_history_card_cb.setEnabled(is_visible)
+        self.review_history_warning_label.setVisible(is_visible)
 
     def populate_models_and_decks(self):
         config = self.mw.addonManager.getConfig(self.addon_id) or {}

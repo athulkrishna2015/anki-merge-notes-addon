@@ -29,8 +29,9 @@ When you merge notes, the add-on still creates a **new note**. Review history in
 4. **Multi-Card Note Types:** If the target note type generates multiple cards, the preserved history is applied to the **first generated merged card**.
 5. **Deletion of Original Notes:** If **Delete original notes after merge** is enabled, the source notes/cards are removed after the merge succeeds.
 6. **Keeping Original Notes:** If deletion is disabled, the original cards remain, and the merged note is added alongside them.
+7. **Undo Limitation:** The preserve-history feature currently copies review log rows directly, so Anki's normal Undo may not fully remove the copied history entries.
 
-**Recommendation:** This add-on now works better with studied cards than before, but you should still choose the history source card carefully, especially when merging multiple reviewed notes into one result.
+**Recommendation:** This add-on now works better with studied cards than before, but you should still choose the history source card carefully, especially when merging multiple reviewed notes into one result. If you rely on Undo, treat preserve-history merges with extra caution.
 
 ## Installation
 
@@ -57,6 +58,7 @@ When you merge notes, the add-on still creates a **new note**. Review history in
    - Choose whether to remove cloze syntax.
    - Choose whether to preserve review history on the merged card.
    - If preserving history, choose which source card should donate its history.
+   - Review the Undo warning shown for preserve-history merges.
    - Choose whether to delete the original notes.
 7. Click **OK** to merge.
 <img width="1042" height="948" alt="Screenshot_20260324_155101" src="https://github.com/user-attachments/assets/1e982659-cd5f-4f1a-a9cd-6371ca32a973" />
@@ -70,11 +72,12 @@ If you find this add-on useful, please consider supporting its development:
 
 ## Changelog
 
-**2026-03-31**
+**2026-03-31 (v1.2.0)**
 - Added a default-on **Preserve review history on merged card** option in the merge dialog.
-- Added a source-card picker so you can choose which original card should donate its review history.
+- Added a source-card picker that shows the card number so you can choose which original card should donate its review history.
 - Copied the selected source card's scheduling state and review log onto the merged card while keeping the merged-note workflow.
 - Added configuration support and regression tests for the review-history preservation flow.
+- Added a warning in the merge dialog and README that Undo may not fully revert copied review-history rows.
 
 **2026-03-25**
 - Restored true multi-source field mapping in the merge dialog, matching the documented checkbox workflow.
