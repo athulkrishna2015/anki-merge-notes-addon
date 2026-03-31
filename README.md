@@ -62,7 +62,7 @@ When you merge notes, the add-on still creates a **new note**. Review history in
    - Choose whether to delete the original notes.
 7. Click **OK** to merge.
 
-<img width="1317" height="948" alt="Screenshot_20260331_144321" src="https://github.com/user-attachments/assets/8424ea59-3992-4955-aa8e-f07ff4f45127" />
+<img width="1317" height="1029" alt="Screenshot_20260331_144709" src="https://github.com/user-attachments/assets/83e36b9b-9aad-45e2-9eba-93daf259010d" />
 
 ---
 ## Support
