@@ -61,7 +61,8 @@ When you merge notes, the add-on still creates a **new note**. Review history in
    - Review the Undo warning shown for preserve-history merges.
    - Choose whether to delete the original notes.
 7. Click **OK** to merge.
-<img width="1042" height="948" alt="Screenshot_20260324_155101" src="https://github.com/user-attachments/assets/1e982659-cd5f-4f1a-a9cd-6371ca32a973" />
+
+<img width="1317" height="948" alt="Screenshot_20260331_144321" src="https://github.com/user-attachments/assets/8424ea59-3992-4955-aa8e-f07ff4f45127" />
 
 ---
 ## Support
