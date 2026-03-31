@@ -1,3 +1,5 @@
+import re
+
 from aqt import mw
 from aqt.browser import Browser
 from aqt.qt import *
@@ -53,6 +55,18 @@ def filter_existing_note_ids(collection, note_ids):
     return valid_note_ids
 
 
+HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+WHITESPACE_PATTERN = re.compile(r"\s+")
+
+
+def summarize_for_picker(text, limit=60):
+    plain_text = HTML_TAG_PATTERN.sub(" ", text or "")
+    plain_text = WHITESPACE_PATTERN.sub(" ", plain_text).strip()
+    if len(plain_text) <= limit:
+        return plain_text
+    return plain_text[: limit - 3] + "..."
+
+
 class MergeDialog(QDialog):
     def __init__(self, browser: Browser, selected_notes, parent=None):
         super().__init__(parent or browser)
@@ -77,6 +91,9 @@ class MergeDialog(QDialog):
         self.separator_input = QLineEdit()
         self.remove_cloze_cb = QCheckBox("Remove cloze syntax from merged fields (keep only the text)")
         self.delete_originals_cb = QCheckBox("Delete original notes after merge")
+        self.preserve_review_history_cb = QCheckBox("Preserve review history on merged card")
+        self.review_history_source_label = QLabel("Use History From:")
+        self.review_history_card_cb = QComboBox()
         self.open_new_note_cb = QCheckBox("Open/select newly created note in Browser")
         
         # Apply Config Defaults
@@ -89,6 +106,12 @@ class MergeDialog(QDialog):
         
         last_del = config.get("last_delete_originals", config.get("default_delete_originals", False))
         self.delete_originals_cb.setChecked(last_del)
+
+        last_preserve = config.get(
+            "last_preserve_review_history",
+            config.get("default_preserve_review_history", True),
+        )
+        self.preserve_review_history_cb.setChecked(last_preserve)
         
         last_open = config.get("last_open_new_note", config.get("default_open_new_note", True))
         self.open_new_note_cb.setChecked(last_open)
@@ -99,6 +122,8 @@ class MergeDialog(QDialog):
 
         self.setup_ui()
         self.populate_models_and_decks()
+        self.populate_review_history_cards()
+        self.update_review_history_controls()
         self.update_fields_ui()
 
     def get_unique_source_fields(self):
@@ -147,6 +172,10 @@ class MergeDialog(QDialog):
         options_layout.addRow("", self.remove_cloze_cb)
         
         options_layout.addRow("", self.delete_originals_cb)
+
+        self.preserve_review_history_cb.toggled.connect(self.update_review_history_controls)
+        options_layout.addRow("", self.preserve_review_history_cb)
+        options_layout.addRow(self.review_history_source_label, self.review_history_card_cb)
         
         options_layout.addRow("", self.open_new_note_cb)
 
@@ -159,6 +188,58 @@ class MergeDialog(QDialog):
         layout.addWidget(btn_box)
         
         self.setLayout(layout)
+
+    def populate_review_history_cards(self):
+        self.review_history_card_cb.clear()
+        first_reviewed_index = None
+
+        for note_id in self.selected_notes:
+            try:
+                note = self.mw.col.get_note(note_id)
+            except Exception:
+                continue
+
+            field_names = list(note.keys())
+            preview = ""
+            if field_names:
+                preview = summarize_for_picker(note[field_names[0]])
+
+            try:
+                note_cards = note.cards()
+            except Exception:
+                note_cards = []
+
+            for card in note_cards:
+                try:
+                    template_name = card.template()["name"]
+                except Exception:
+                    template_name = "Card"
+
+                card_number = getattr(card, "ord", 0) + 1
+                label = f"Card {card_number}: {template_name}"
+                if preview:
+                    label = f"{label} | {preview}"
+                label = f"{label} (note {note_id}, card {card.id})"
+                self.review_history_card_cb.addItem(label, userData=card.id)
+
+                if first_reviewed_index is None and getattr(card, "type", 0) != 0:
+                    first_reviewed_index = self.review_history_card_cb.count() - 1
+
+        if self.review_history_card_cb.count():
+            self.review_history_card_cb.setCurrentIndex(first_reviewed_index or 0)
+            self.preserve_review_history_cb.setEnabled(True)
+        else:
+            self.preserve_review_history_cb.setChecked(False)
+            self.preserve_review_history_cb.setEnabled(False)
+
+    def update_review_history_controls(self):
+        is_visible = (
+            self.preserve_review_history_cb.isChecked()
+            and self.review_history_card_cb.count() > 0
+        )
+        self.review_history_source_label.setVisible(is_visible)
+        self.review_history_card_cb.setVisible(is_visible)
+        self.review_history_card_cb.setEnabled(is_visible)
 
     def populate_models_and_decks(self):
         config = self.mw.addonManager.getConfig(self.addon_id) or {}
@@ -284,6 +365,7 @@ class MergeDialog(QDialog):
         custom_separator,
         remove_cloze,
         delete_originals,
+        preserve_review_history,
         open_new_note,
         field_mapping,
     ):
@@ -297,6 +379,7 @@ class MergeDialog(QDialog):
         config["last_separator"] = custom_separator
         config["last_remove_cloze"] = remove_cloze
         config["last_delete_originals"] = delete_originals
+        config["last_preserve_review_history"] = preserve_review_history
         config["last_open_new_note"] = open_new_note
         config["last_target_model_id"] = target_model_id
         config["last_target_deck_id"] = target_deck_id
@@ -319,7 +402,23 @@ class MergeDialog(QDialog):
         custom_separator = self.separator_input.text()
         remove_cloze = self.remove_cloze_cb.isChecked()
         delete_originals = self.delete_originals_cb.isChecked()
+        preserve_review_history = (
+            self.preserve_review_history_cb.isChecked()
+            and self.review_history_card_cb.count() > 0
+        )
+        review_history_source_card_id = (
+            self.review_history_card_cb.currentData()
+            if preserve_review_history
+            else None
+        )
         open_new_note = self.open_new_note_cb.isChecked()
+
+        if preserve_review_history and review_history_source_card_id is None:
+            showInfo(
+                "Please choose a source card whose review history should be preserved.",
+                parent=self,
+            )
+            return
 
         field_mapping = {}
         for target_name, list_widget in self.target_field_widgets.items():
@@ -337,6 +436,7 @@ class MergeDialog(QDialog):
             custom_separator,
             remove_cloze,
             delete_originals,
+            preserve_review_history,
             open_new_note,
             field_mapping,
         )
@@ -349,7 +449,9 @@ class MergeDialog(QDialog):
             custom_separator,
             remove_cloze,
             delete_originals,
-            self.selected_notes
+            self.selected_notes,
+            preserve_review_history,
+            review_history_source_card_id,
         )
 
         if new_note_id:

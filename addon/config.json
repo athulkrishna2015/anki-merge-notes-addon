@@ -1,6 +1,7 @@
 {
     "default_separator": "<br><hr><br>",
-    "default_remove_cloze": false,
-    "default_delete_originals": false,
+    "default_remove_cloze": true,
+    "default_delete_originals": true,
+    "default_preserve_review_history": true,
     "default_open_new_note": true
 }

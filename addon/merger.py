@@ -1,6 +1,14 @@
 import re
 from aqt.utils import showInfo
 
+try:
+    from anki.consts import CARD_TYPE_LRN, CARD_TYPE_NEW, QUEUE_TYPE_NEW, QUEUE_TYPE_PREVIEW
+except Exception:
+    CARD_TYPE_LRN = 1
+    CARD_TYPE_NEW = 0
+    QUEUE_TYPE_NEW = 0
+    QUEUE_TYPE_PREVIEW = 4
+
 CLOZE_PATTERN = re.compile(r"\{\{c\d+::(.*?)(?:::.*?)?\}\}", re.DOTALL)
 
 
@@ -21,7 +29,136 @@ def get_existing_notes(collection, note_ids):
     return notes, valid_note_ids
 
 
-def perform_merge(mw, target_model_id, target_deck_id, field_mapping, custom_separator, remove_cloze, delete_originals, selected_note_ids):
+def get_existing_card(collection, card_id):
+    try:
+        return collection.get_card(card_id)
+    except Exception:
+        return None
+
+
+def get_card_ids_for_note(collection, note_id):
+    if hasattr(collection, "card_ids_of_note"):
+        return list(collection.card_ids_of_note(note_id))
+
+    note = collection.get_note(note_id)
+    return [card.id for card in note.cards()]
+
+
+def normalize_preserved_card_state(card):
+    if getattr(card, "odid", 0):
+        card.due = getattr(card, "odue", card.due)
+        card.odue = 0
+        card.odid = 0
+        if getattr(card, "type", CARD_TYPE_NEW) == CARD_TYPE_LRN:
+            card.queue = QUEUE_TYPE_NEW
+            card.type = CARD_TYPE_NEW
+        else:
+            card.queue = card.type
+    elif getattr(card, "queue", None) == QUEUE_TYPE_PREVIEW:
+        card.queue = card.type
+
+
+def copy_card_state(source_card, target_card):
+    preserved_fields = (
+        "type",
+        "queue",
+        "due",
+        "ivl",
+        "factor",
+        "reps",
+        "lapses",
+        "left",
+        "odue",
+        "odid",
+        "flags",
+        "original_position",
+        "custom_data",
+        "memory_state",
+        "desired_retention",
+        "decay",
+        "last_review_time",
+    )
+    for field_name in preserved_fields:
+        if hasattr(source_card, field_name):
+            setattr(target_card, field_name, getattr(source_card, field_name))
+
+    normalize_preserved_card_state(target_card)
+
+
+def build_copied_revlog_rows(collection, source_card_id, target_card_id):
+    source_rows = collection.db.all(
+        "select * from revlog where cid = ? order by id",
+        source_card_id,
+    )
+    if not source_rows:
+        return []
+
+    copied_rows = []
+    next_candidate = None
+    current_usn = collection.usn() if hasattr(collection, "usn") else None
+
+    for row in source_rows:
+        copied_row = list(row)
+        base_id = int(copied_row[0])
+        candidate_id = base_id if next_candidate is None else max(base_id, next_candidate)
+        while collection.db.scalar("select 1 from revlog where id = ?", candidate_id):
+            candidate_id += 1
+
+        copied_row[0] = candidate_id
+        copied_row[1] = target_card_id
+        if current_usn is not None:
+            copied_row[2] = current_usn
+        copied_rows.append(tuple(copied_row))
+        next_candidate = candidate_id + 1
+
+    return copied_rows
+
+
+def preserve_review_history_for_new_note(collection, source_card_id, target_note_id):
+    source_card = get_existing_card(collection, source_card_id)
+    if source_card is None:
+        raise ValueError("The selected source card for review history could not be found.")
+
+    new_card_ids = get_card_ids_for_note(collection, target_note_id)
+    if not new_card_ids:
+        raise ValueError("The merged note did not generate any cards.")
+
+    target_card = collection.get_card(new_card_ids[0])
+    copy_card_state(source_card, target_card)
+    collection.update_card(target_card)
+
+    copied_rows = build_copied_revlog_rows(collection, source_card.id, target_card.id)
+    if copied_rows:
+        collection.db.executemany(
+            "insert into revlog values (?,?,?,?,?,?,?,?,?)",
+            copied_rows,
+        )
+
+    return target_card.id
+
+
+def remove_note_safely(collection, note_id):
+    try:
+        if hasattr(collection, "remove_notes"):
+            collection.remove_notes([note_id])
+        else:
+            collection.remNotes([note_id])
+    except Exception:
+        pass
+
+
+def perform_merge(
+    mw,
+    target_model_id,
+    target_deck_id,
+    field_mapping,
+    custom_separator,
+    remove_cloze,
+    delete_originals,
+    selected_note_ids,
+    preserve_review_history=False,
+    review_history_source_card_id=None,
+):
     if target_model_id is None:
         showInfo("Please choose a target note type.", parent=mw)
         return False
@@ -35,6 +172,21 @@ def perform_merge(mw, target_model_id, target_deck_id, field_mapping, custom_sep
     if not selected_notes:
         showInfo("No valid notes found to merge.", parent=mw)
         return False
+
+    if preserve_review_history:
+        if review_history_source_card_id is None:
+            showInfo(
+                "Please choose a source card whose review history should be preserved.",
+                parent=mw,
+            )
+            return False
+
+        if get_existing_card(mw.col, review_history_source_card_id) is None:
+            showInfo(
+                "The selected source card for review history could not be found.",
+                parent=mw,
+            )
+            return False
 
     # Single Undo Setup
     current_undo = None
@@ -85,6 +237,18 @@ def perform_merge(mw, target_model_id, target_deck_id, field_mapping, custom_sep
     except Exception as e:
         showInfo(f"Error adding merged note: {e}", parent=mw)
         return False
+
+    if preserve_review_history:
+        try:
+            preserve_review_history_for_new_note(
+                mw.col,
+                review_history_source_card_id,
+                new_note.id,
+            )
+        except Exception as e:
+            remove_note_safely(mw.col, new_note.id)
+            showInfo(f"Error preserving review history: {e}", parent=mw)
+            return False
 
     if delete_originals:
         # Delete original notes

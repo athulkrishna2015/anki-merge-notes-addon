@@ -12,6 +12,7 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 - **Custom Separator:** Choose a custom text or HTML separator (like `<br><hr><br>`) to insert between the merged contents.
 - **Remove Cloze Syntax:** Option to automatically strip out `{{c1::...}}` syntax from the combined text, keeping only the raw text, which is especially useful when merging cloze notes into a basic non-cloze note type.
 - **Automatic Cleanup:** Option to automatically delete the original source notes after a successful merge.
+- **Optional Review History Preservation:** Optionally copy the scheduling state and review history from one selected source card onto the merged card.
 - **Tags Preservation:** The newly merged note will inherit all tags from the original notes.
 - **Intelligent Field Matching:** Automatically suggests the best source field for each target field based on name similarity.
 - **Persistent Preferences:** The add-on remembers your field mappings per Note Type, selected Target Deck, custom separator, and other options across Anki sessions, including multi-source mappings.
@@ -20,13 +21,16 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 
 ## ⚠️ Important: Review History & Duplicate Cards
 
-When you merge notes, the add-on creates a **newly created note with all "New" cards**. It is important to understand how this affects your study history:
+When you merge notes, the add-on still creates a **new note**. Review history in Anki is tied to card IDs, so the add-on can only preserve history by copying it from **one selected source card** onto the merged result.
 
-1. **No History Transfer:** Review history from the original cards is **not** transferred to the new merged cards.
-2. **Deletion of Original Notes:** If the "Delete original notes" option is enabled, the source notes and their associated cards (including all review history) are deleted.
-3. **Duplicate Cards:** If the "Delete original notes" option is disabled, the original notes remain intact, resulting in duplicates (the original cards with their history, and the new merged cards as "New" cards).
+1. **New Note Creation:** The merge creates a new note, not an in-place rewrite of an existing one.
+2. **Optional History Transfer:** If **Preserve review history on merged card** is enabled, you can choose one source card whose scheduling state and review log should be copied to the merged card.
+3. **Single History Donor:** Only one source card's history can be preserved. Histories from multiple reviewed cards are not combined.
+4. **Multi-Card Note Types:** If the target note type generates multiple cards, the preserved history is applied to the **first generated merged card**.
+5. **Deletion of Original Notes:** If **Delete original notes after merge** is enabled, the source notes/cards are removed after the merge succeeds.
+6. **Keeping Original Notes:** If deletion is disabled, the original cards remain, and the merged note is added alongside them.
 
-**Recommendation:** This add-on is best suited for merging **unstudied (New) notes**. Use caution when merging notes that have active review history, as the newly generated cards will not inherit their progress.
+**Recommendation:** This add-on now works better with studied cards than before, but you should still choose the history source card carefully, especially when merging multiple reviewed notes into one result.
 
 ## Installation
 
@@ -51,6 +55,8 @@ When you merge notes, the add-on creates a **newly created note with all "New" c
 6. **Configure Options:** 
    - Set a custom separator.
    - Choose whether to remove cloze syntax.
+   - Choose whether to preserve review history on the merged card.
+   - If preserving history, choose which source card should donate its history.
    - Choose whether to delete the original notes.
 7. Click **OK** to merge.
 <img width="1042" height="948" alt="Screenshot_20260324_155101" src="https://github.com/user-attachments/assets/1e982659-cd5f-4f1a-a9cd-6371ca32a973" />
@@ -63,6 +69,12 @@ If you find this add-on useful, please consider supporting its development:
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D01W6NQT)
 
 ## Changelog
+
+**2026-03-31**
+- Added a default-on **Preserve review history on merged card** option in the merge dialog.
+- Added a source-card picker so you can choose which original card should donate its review history.
+- Copied the selected source card's scheduling state and review log onto the merged card while keeping the merged-note workflow.
+- Added configuration support and regression tests for the review-history preservation flow.
 
 **2026-03-25**
 - Restored true multi-source field mapping in the merge dialog, matching the documented checkbox workflow.
