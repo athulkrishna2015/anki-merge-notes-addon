@@ -9,14 +9,26 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MERGER_PATH = REPO_ROOT / "addon" / "merger.py"
 
 
-def load_merger_module(show_info_calls):
+def load_merger_module(show_info_calls, ask_user_calls=None, ask_user_responses=None):
+    if ask_user_calls is None:
+        ask_user_calls = []
+    if ask_user_responses is None:
+        ask_user_responses = []
+
     aqt_module = types.ModuleType("aqt")
     utils_module = types.ModuleType("aqt.utils")
 
     def show_info(message, parent=None):
         show_info_calls.append({"message": message, "parent": parent})
+        
+    def ask_user(message, parent=None):
+        ask_user_calls.append({"message": message, "parent": parent})
+        if ask_user_responses:
+            return ask_user_responses.pop(0)
+        return True
 
     utils_module.showInfo = show_info
+    utils_module.askUser = ask_user
     aqt_module.utils = utils_module
 
     previous_modules = {
@@ -174,6 +186,9 @@ class FakeCollection:
     def undo_status(self):
         return FakeUndoStatus("undo-token")
 
+    def add_custom_undo_entry(self, label):
+        return "custom-undo-token-" + label
+
     def new_note(self, model):
         field_names = {field["name"]: "" for field in model["flds"]}
         return FakeNote(None, field_names)
@@ -277,7 +292,7 @@ class MergerTests(unittest.TestCase):
         self.assertEqual(collection.added_note["Extra"], "Tail")
         self.assertEqual(collection.added_note.tags, ["alpha", "beta", "gamma"])
         self.assertEqual(collection.removed_note_ids, [1, 2])
-        self.assertEqual(collection.merged_undo_token, "undo-token")
+        self.assertEqual(collection.merged_undo_token, "custom-undo-token-Merge Notes")
         self.assertEqual(show_info_calls, [])
 
     def test_perform_merge_can_copy_selected_card_history_to_new_card(self):
@@ -408,6 +423,66 @@ class MergerTests(unittest.TestCase):
             show_info_calls[0]["message"],
             "The selected source card for review history could not be found.",
         )
+
+    def test_perform_merge_warns_on_data_loss_and_aborts_if_declined(self):
+        show_info_calls = []
+        ask_user_calls = []
+        ask_user_responses = [False]
+        merger = load_merger_module(show_info_calls, ask_user_calls, ask_user_responses)
+
+        target_model = {"flds": [{"name": "Combined"}]}
+        collection = FakeCollection(
+            notes={
+                1: FakeNote(1, {"Front": "Hello", "UnmappedField": "HasData"}),
+            },
+            target_model=target_model,
+        )
+        main_window = FakeMainWindow(collection)
+
+        result = merger.perform_merge(
+            main_window,
+            101,
+            202,
+            {"Combined": ["Front"]},
+            " / ",
+            False,
+            True,  # delete originals
+            [1],
+        )
+
+        self.assertFalse(result)
+        self.assertEqual(len(ask_user_calls), 1)
+        self.assertIn("UnmappedField", ask_user_calls[0]["message"])
+        self.assertIsNone(collection.added_deck_id)
+
+    def test_perform_merge_warns_on_data_loss_and_proceeds_if_accepted(self):
+        show_info_calls = []
+        ask_user_calls = []
+        ask_user_responses = [True]
+        merger = load_merger_module(show_info_calls, ask_user_calls, ask_user_responses)
+
+        target_model = {"flds": [{"name": "Combined"}]}
+        collection = FakeCollection(
+            notes={
+                1: FakeNote(1, {"Front": "Hello", "UnmappedField": "HasData"}),
+            },
+            target_model=target_model,
+        )
+        main_window = FakeMainWindow(collection)
+
+        result = merger.perform_merge(
+            main_window,
+            101,
+            202,
+            {"Combined": ["Front"]},
+            " / ",
+            False,
+            True,  # delete originals
+            [1],
+        )
+
+        self.assertEqual(result, 999)
+        self.assertEqual(len(ask_user_calls), 1)
 
 
 if __name__ == "__main__":

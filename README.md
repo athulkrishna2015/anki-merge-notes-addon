@@ -18,6 +18,8 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 - **Persistent Preferences:** The add-on remembers your field mappings per Note Type, selected Target Deck, custom separator, and other options across Anki sessions, including multi-source mappings.
 - **Auto-Detection:** Automatically suggests the target deck based on the deck of your originally selected notes.
 - **Safer Merge Validation:** Missing source notes or invalid target selections are detected before merge/delete actions are applied.
+- **Data Loss Prevention:** Warns you before merging if unmapped fields containing valuable data are going to be permanently lost when original notes are deleted.
+- **Cleaner Undo:** The entire merge operation and its side-effects consolidate into a single properly named "Merge Notes" undo action for an easy rollback.
 
 ## ⚠️ Important: Review History & Duplicate Cards
 
@@ -72,6 +74,10 @@ If you find this add-on useful, please consider supporting its development:
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D01W6NQT)
 
 ## Changelog
+
+**2026-04-14**
+- Added a confirmation warning prompt to prevent accidental data loss if original notes are deleted while unmapped source fields contain data.
+- Fixed the dynamic "Merge Notes" label on `Edit > Undo` across all modern Anki versions.
 
 **2026-03-31 (v1.2.0)**
 - Added a default-on **Preserve review history on merged card** option in the merge dialog.

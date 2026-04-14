@@ -1,5 +1,5 @@
 import re
-from aqt.utils import showInfo
+from aqt.utils import showInfo, askUser
 
 try:
     from anki.consts import CARD_TYPE_LRN, CARD_TYPE_NEW, QUEUE_TYPE_NEW, QUEUE_TYPE_PREVIEW
@@ -188,9 +188,30 @@ def perform_merge(
             )
             return False
 
+    if delete_originals:
+        mapped_source_fields = {src for mapped_list in field_mapping.values() for src in mapped_list}
+        unmapped_non_empty = set()
+        for note in selected_notes:
+            note_keys = set(note.keys())
+            for field in note_keys:
+                if field not in mapped_source_fields and note[field].strip():
+                    unmapped_non_empty.add(field)
+
+        if unmapped_non_empty:
+            field_list_str = ", ".join(sorted(unmapped_non_empty))
+            warning_msg = (
+                f"Warning: You chose to delete original notes, but the following unmapped fields "
+                f"contain data that will be PERMANENTLY LOST:\n\n{field_list_str}\n\n"
+                f"Do you want to proceed with the merge?"
+            )
+            if not askUser(warning_msg, parent=mw):
+                return False
+
     # Single Undo Setup
     current_undo = None
-    if hasattr(mw.col, 'undo_status'):
+    if hasattr(mw.col, 'add_custom_undo_entry'):
+        current_undo = mw.col.add_custom_undo_entry("Merge Notes")
+    elif hasattr(mw.col, 'undo_status'):
         current_undo = mw.col.undo_status().last_step
     else:
         mw.checkpoint("Merge Notes")
