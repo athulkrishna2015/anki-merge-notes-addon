@@ -158,33 +158,36 @@ def perform_merge(
     selected_note_ids,
     preserve_review_history=False,
     review_history_source_card_id=None,
+    parent_window=None,
 ):
+    parent = parent_window or mw
+
     if target_model_id is None:
-        showInfo("Please choose a target note type.", parent=mw)
+        showInfo("Please choose a target note type.", parent=parent)
         return False
 
     if target_deck_id is None:
-        showInfo("Please choose a target deck.", parent=mw)
+        showInfo("Please choose a target deck.", parent=parent)
         return False
 
     selected_notes, valid_note_ids = get_existing_notes(mw.col, selected_note_ids)
 
     if not selected_notes:
-        showInfo("No valid notes found to merge.", parent=mw)
+        showInfo("No valid notes found to merge.", parent=parent)
         return False
 
     if preserve_review_history:
         if review_history_source_card_id is None:
             showInfo(
                 "Please choose a source card whose review history should be preserved.",
-                parent=mw,
+                parent=parent,
             )
             return False
 
         if get_existing_card(mw.col, review_history_source_card_id) is None:
             showInfo(
                 "The selected source card for review history could not be found.",
-                parent=mw,
+                parent=parent,
             )
             return False
 
@@ -204,7 +207,7 @@ def perform_merge(
                 f"contain data that will be PERMANENTLY LOST:\n\n{field_list_str}\n\n"
                 f"Do you want to proceed with the merge?"
             )
-            if not askUser(warning_msg, parent=mw):
+            if not askUser(warning_msg, parent=parent):
                 return False
 
     # Single Undo Setup
@@ -256,7 +259,7 @@ def perform_merge(
     try:
         mw.col.add_note(new_note, target_deck_id)
     except Exception as e:
-        showInfo(f"Error adding merged note: {e}", parent=mw)
+        showInfo(f"Error adding merged note: {e}", parent=parent)
         return False
 
     if preserve_review_history:
@@ -268,7 +271,7 @@ def perform_merge(
             )
         except Exception as e:
             remove_note_safely(mw.col, new_note.id)
-            showInfo(f"Error preserving review history: {e}", parent=mw)
+            showInfo(f"Error preserving review history: {e}", parent=parent)
             return False
 
     if delete_originals:
@@ -281,7 +284,7 @@ def perform_merge(
             else:
                 mw.col.remNotes(valid_note_ids)
         except Exception as e:
-            showInfo(f"Error deleting original notes: {e}", parent=mw)
+            showInfo(f"Error deleting original notes: {e}", parent=parent)
 
     # Merge undos conditionally (2.1.45+)
     if current_undo is not None and hasattr(mw.col, 'merge_undo_entries'):

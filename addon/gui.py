@@ -459,6 +459,7 @@ class MergeDialog(QDialog):
             self.selected_notes,
             preserve_review_history,
             review_history_source_card_id,
+            parent_window=self,
         )
 
         if new_note_id:
