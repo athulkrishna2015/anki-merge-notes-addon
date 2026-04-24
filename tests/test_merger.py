@@ -1,5 +1,7 @@
 import importlib.util
+import sqlite3
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
@@ -166,6 +168,29 @@ class FakeCollection:
         self.models = FakeModels({101: target_model})
         self.cards = dict(cards or {})
         self.db = FakeDB(revlog_rows)
+        self._tempdir = tempfile.TemporaryDirectory()
+        self.path = str(Path(self._tempdir.name) / "collection.anki2")
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                """
+                create table revlog (
+                    id integer primary key,
+                    cid integer not null,
+                    usn integer not null,
+                    ease integer not null,
+                    ivl integer not null,
+                    lastIvl integer not null,
+                    factor integer not null,
+                    time integer not null,
+                    type integer not null
+                )
+                """
+            )
+            if revlog_rows:
+                conn.executemany(
+                    "insert into revlog values (?,?,?,?,?,?,?,?,?)",
+                    revlog_rows,
+                )
         self.added_note = None
         self.added_deck_id = None
         self.removed_note_ids = None
@@ -231,6 +256,12 @@ class FakeCollection:
     def merge_undo_entries(self, token):
         self.merged_undo_token = token
 
+    def __del__(self):
+        try:
+            self._tempdir.cleanup()
+        except Exception:
+            pass
+
 
 class FakeMainWindow:
     def __init__(self, collection):
@@ -239,6 +270,12 @@ class FakeMainWindow:
 
     def checkpoint(self, label):
         self.checkpoints.append(label)
+
+
+try:
+    from anki.collection import Collection as RealCollection
+except Exception:
+    RealCollection = None
 
 
 class MergerTests(unittest.TestCase):
@@ -363,14 +400,93 @@ class MergerTests(unittest.TestCase):
         self.assertEqual(merged_card.desired_retention, 0.92)
         self.assertEqual(merged_card.decay, 0.35)
         self.assertEqual(merged_card.last_review_time, 123456789)
-        self.assertEqual(
-            [row for row in collection.db.revlog_rows if row[1] == 2001],
-            [
-                (1003, 2001, 77, 3, 10, 5, 2500, 1, 0),
-                (1004, 2001, 77, 4, 15, 10, 2100, 1, 0),
-            ],
-        )
+        with sqlite3.connect(collection.path) as conn:
+            self.assertEqual(
+                conn.execute(
+                    "select * from revlog where cid = ? order by id",
+                    (2001,),
+                ).fetchall(),
+                [
+                    (1003, 2001, 77, 3, 10, 5, 2500, 1, 0),
+                    (1004, 2001, 77, 4, 15, 10, 2100, 1, 0),
+                ],
+            )
         self.assertEqual(show_info_calls, [])
+
+    @unittest.skipUnless(RealCollection is not None, "Anki collection not available")
+    def test_perform_merge_with_preserved_history_keeps_a_working_undo_step(self):
+        show_info_calls = []
+        merger = load_merger_module(show_info_calls)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            collection_path = str(Path(temp_dir) / "real.anki2")
+            collection = RealCollection(collection_path)
+            model = collection.models.by_name("Basic")
+            deck_id = collection.decks.id("Default")
+
+            note_ids = []
+
+            def add_basic(front, back):
+                note = collection.new_note(model)
+                note["Front"] = front
+                note["Back"] = back
+                collection.add_note(note, deck_id)
+                note_ids.append(note.id)
+                return note.id
+
+            first_note_id = add_basic("one", "A")
+            second_note_id = add_basic("two", "B")
+
+            source_card_id = collection.card_ids_of_note(first_note_id)[0]
+            source_card = collection.get_card(source_card_id)
+            source_card.type = 2
+            source_card.queue = 2
+            source_card.due = 42
+            source_card.ivl = 9
+            source_card.factor = 2500
+            source_card.reps = 3
+            collection.update_card(source_card)
+            collection.db.executemany(
+                "insert into revlog values (?,?,?,?,?,?,?,?,?)",
+                [
+                    (1000, source_card_id, -1, 3, 10, 5, 2500, 1, 0),
+                    (1001, source_card_id, -1, 4, 12, 6, 2400, 1, 0),
+                ],
+            )
+            collection.close()
+
+            collection = RealCollection(collection_path)
+            main_window = FakeMainWindow(collection)
+
+            new_note_id = merger.perform_merge(
+                main_window,
+                collection.models.by_name("Basic")["id"],
+                collection.decks.id("Default"),
+                {"Front": ["Front"], "Back": ["Back"]},
+                " / ",
+                False,
+                True,
+                note_ids,
+                True,
+                source_card_id,
+            )
+
+            self.assertTrue(new_note_id)
+            self.assertEqual(list(collection.find_notes("")), [new_note_id])
+            self.assertEqual(collection.undo_status().undo, "Merge Notes")
+
+            collection.undo()
+
+            self.assertEqual(sorted(collection.find_notes("")), sorted(note_ids))
+            with self.assertRaises(Exception):
+                collection.get_note(new_note_id)
+
+            collection.close()
+
+            reopened = RealCollection(collection_path)
+            self.assertEqual(sorted(reopened.find_notes("")), sorted(note_ids))
+            reopened.close()
+            self.assertEqual(show_info_calls, [])
 
     def test_perform_merge_rejects_missing_target_model(self):
         show_info_calls = []

@@ -31,9 +31,9 @@ When you merge notes, the add-on still creates a **new note**. Review history in
 4. **Multi-Card Note Types:** If the target note type generates multiple cards, the preserved history is applied to the **first generated merged card**.
 5. **Deletion of Original Notes:** If **Delete original notes after merge** is enabled, the source notes/cards are removed after the merge succeeds.
 6. **Keeping Original Notes:** If deletion is disabled, the original cards remain, and the merged note is added alongside them.
-7. **Undo Limitation:** The preserve-history feature currently copies review log rows directly, so Anki's normal Undo may not fully remove the copied history entries.
+7. **Undo Behavior:** On current Anki versions, Undo removes the merged note and restores the original notes as a single **Merge Notes** step, even when review history is preserved.
 
-**Recommendation:** This add-on now works better with studied cards than before, but you should still choose the history source card carefully, especially when merging multiple reviewed notes into one result. If you rely on Undo, treat preserve-history merges with extra caution.
+**Recommendation:** Choose the history source card carefully, especially when merging multiple reviewed notes into one result, because only one card's scheduling state and review history can be copied onto the merged result.
 
 ## Installation
 
@@ -60,7 +60,6 @@ When you merge notes, the add-on still creates a **new note**. Review history in
    - Choose whether to remove cloze syntax.
    - Choose whether to preserve review history on the merged card.
    - If preserving history, choose which source card should donate its history.
-   - Review the Undo warning shown for preserve-history merges.
    - Choose whether to delete the original notes.
 7. Click **OK** to merge.
 
@@ -74,6 +73,11 @@ If you find this add-on useful, please consider supporting its development:
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D01W6NQT)
 
 ## Changelog
+
+**2026-04-24 **
+- Auto-select the same note type as target when all selected notes share the same type.
+- Improved undo reliability: reordered internal operations so the undo group is sealed before any raw database writes.
+- Fixed the post-merge browser refresh path so Ctrl+Z cleanly removes the merged note while restoring the originals.
 
 **2026-04-14**
 - Added a confirmation warning prompt to prevent accidental data loss if original notes are deleted while unmapped source fields contain data.

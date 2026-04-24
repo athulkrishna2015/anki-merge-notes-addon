@@ -140,16 +140,27 @@ def copy_card_state_for_new_note(collection, source_card_id, target_note_id):
 def copy_revlog_rows(collection, source_card_id, target_card_id):
     """Copy review-log rows from source card to target card.
 
-    This uses raw SQL (collection.db.executemany) which bypasses the undo
-    system and clears the undo stack.  It must be called AFTER
-    merge_undo_entries() has already sealed the undo group.
+    Uses a direct sqlite3 connection instead of collection.db to avoid
+    clearing the undo stack.  Anki's col.db proxy notifies the backend
+    of writes which triggers an undo-stack clear; a separate connection
+    bypasses that entirely.
     """
+    import sqlite3
+
     copied_rows = build_copied_revlog_rows(collection, source_card_id, target_card_id)
-    if copied_rows:
-        collection.db.executemany(
-            "insert into revlog values (?,?,?,?,?,?,?,?,?)",
+    if not copied_rows:
+        return
+
+    db_path = collection.path
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executemany(
+            "INSERT INTO revlog VALUES (?,?,?,?,?,?,?,?,?)",
             copied_rows,
         )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def remove_note_safely(collection, note_id):
@@ -300,7 +311,7 @@ def perform_merge(
         except Exception as e:
             showInfo(f"Error deleting original notes: {e}", parent=parent)
 
-    # --- Seal the undo group BEFORE any raw SQL writes ---
+    # --- Seal the undo group ---
     # merge_undo_entries collapses add_note + update_card + remove_notes
     # into a single "Merge Notes" undo step.
     if current_undo is not None and hasattr(mw.col, 'merge_undo_entries'):
@@ -309,11 +320,13 @@ def perform_merge(
         except Exception:
             pass
 
-    # --- Raw SQL revlog copy (not undoable, runs AFTER undo group is sealed) ---
+    # --- Revlog copy (raw SQL, runs AFTER undo group is sealed) ---
+    # This must come after merge_undo_entries so the undo group is already
+    # sealed before any raw DB writes.
     if revlog_copy_ids is not None:
         try:
             copy_revlog_rows(mw.col, revlog_copy_ids[0], revlog_copy_ids[1])
         except Exception:
-            pass  # revlog copy failure is non-fatal; warning already shown in UI
+            pass
 
     return new_note.id

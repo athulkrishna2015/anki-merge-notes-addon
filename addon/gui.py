@@ -95,8 +95,9 @@ class MergeDialog(QDialog):
         self.review_history_source_label = QLabel("Use History From:")
         self.review_history_card_cb = QComboBox()
         self.review_history_warning_label = QLabel(
-            "Warning: preserving review history currently copies revlog entries "
-            "directly, so Undo may not fully revert the copied history rows."
+            "Review history is copied from the selected source card onto "
+            "the first merged card. Undo should still revert the merge "
+            "as a single step."
         )
         self.open_new_note_cb = QCheckBox("Open/select newly created note in Browser")
         
@@ -251,15 +252,29 @@ class MergeDialog(QDialog):
     def populate_models_and_decks(self):
         config = self.mw.addonManager.getConfig(self.addon_id) or {}
 
+        # If all selected notes share the same note type, prefer that type
+        # over the cached last_model_id so the user doesn't have to pick it.
+        common_model_id = None
+        try:
+            model_ids = set()
+            for nid in self.selected_notes:
+                note = self.mw.col.get_note(nid)
+                model_ids.add(note.mid)
+            if len(model_ids) == 1:
+                common_model_id = model_ids.pop()
+        except Exception:
+            pass
+
+        preferred_model_id = common_model_id or config.get("last_target_model_id")
+
         self.target_model_cb.blockSignals(True)
         self.target_model_cb.clear()
         models = self.mw.col.models.all_names_and_ids()
         sorted_models = sorted(models, key=lambda x: x.name)
-        last_model_id = config.get("last_target_model_id")
         
         for i, model in enumerate(sorted_models):
             self.target_model_cb.addItem(model.name, userData=model.id)
-            if model.id == last_model_id:
+            if model.id == preferred_model_id:
                 self.target_model_cb.setCurrentIndex(i)
         self.target_model_cb.blockSignals(False)
         
@@ -464,25 +479,32 @@ class MergeDialog(QDialog):
 
         if new_note_id:
             super().accept()
-            # Refresh the browser without mw.reset() which clears the undo stack.
-            # Instead, re-run the current search to pick up the changes.
-            try:
-                if open_new_note:
-                    search_text = f"nid:{new_note_id}"
-                else:
-                    search_text = self.browser.form.searchEdit.lineEdit().text()
-
-                if hasattr(self.browser, 'searchFor'):
-                    self.browser.searchFor(search_text)
-                else:
-                    self.browser.form.searchEdit.lineEdit().setText(search_text)
-                    if hasattr(self.browser, 'onSearchActivated'):
-                        self.browser.onSearchActivated()
+            # Refresh the browser without a full mw.reset(), which can
+            # interfere with custom undo bookkeeping on some Anki versions.
+            if open_new_note:
+                try:
+                    if hasattr(self.browser, 'searchFor'):
+                        self.browser.searchFor(f"nid:{new_note_id}")
                     else:
-                        self.browser.onSearch()
-            except Exception:
-                pass
-            # Update the Edit menu undo label without resetting global state.
+                        self.browser.form.searchEdit.lineEdit().setText(f"nid:{new_note_id}")
+                        if hasattr(self.browser, 'onSearchActivated'):
+                            self.browser.onSearchActivated()
+                        else:
+                            self.browser.onSearch()
+                except Exception:
+                    pass
+            else:
+                try:
+                    if hasattr(self.browser, 'searchFor'):
+                        self.browser.searchFor(self.browser.form.searchEdit.lineEdit().text())
+                    else:
+                        if hasattr(self.browser, 'onSearchActivated'):
+                            self.browser.onSearchActivated()
+                        else:
+                            self.browser.onSearch()
+                except Exception:
+                    pass
+
             if hasattr(self.mw, 'update_undo_actions'):
                 self.mw.update_undo_actions()
 
