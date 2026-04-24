@@ -464,20 +464,27 @@ class MergeDialog(QDialog):
 
         if new_note_id:
             super().accept()
-            # Refresh browser and optionally load the new note
-            self.mw.reset()
-            if open_new_note:
-                try:
-                    if hasattr(self.browser, 'searchFor'):
-                        self.browser.searchFor(f"nid:{new_note_id}")
+            # Refresh the browser without mw.reset() which clears the undo stack.
+            # Instead, re-run the current search to pick up the changes.
+            try:
+                if open_new_note:
+                    search_text = f"nid:{new_note_id}"
+                else:
+                    search_text = self.browser.form.searchEdit.lineEdit().text()
+
+                if hasattr(self.browser, 'searchFor'):
+                    self.browser.searchFor(search_text)
+                else:
+                    self.browser.form.searchEdit.lineEdit().setText(search_text)
+                    if hasattr(self.browser, 'onSearchActivated'):
+                        self.browser.onSearchActivated()
                     else:
-                        self.browser.form.searchEdit.lineEdit().setText(f"nid:{new_note_id}")
-                        if hasattr(self.browser, 'onSearchActivated'):
-                            self.browser.onSearchActivated()
-                        else:
-                            self.browser.onSearch()
-                except Exception:
-                    pass
+                        self.browser.onSearch()
+            except Exception:
+                pass
+            # Update the Edit menu undo label without resetting global state.
+            if hasattr(self.mw, 'update_undo_actions'):
+                self.mw.update_undo_actions()
 
 def show_merge_dialog(browser: Browser, selected_notes):
     valid_selected_notes = filter_existing_note_ids(mw.col, selected_notes)

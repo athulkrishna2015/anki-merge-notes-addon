@@ -114,7 +114,14 @@ def build_copied_revlog_rows(collection, source_card_id, target_card_id):
     return copied_rows
 
 
-def preserve_review_history_for_new_note(collection, source_card_id, target_note_id):
+def copy_card_state_for_new_note(collection, source_card_id, target_note_id):
+    """Copy scheduling state from source card to the first card of target note.
+
+    This uses collection.update_card() which is an undoable operation and
+    must be called BEFORE merge_undo_entries() seals the undo group.
+
+    Returns (source_card_id, target_card_id) for later revlog copying.
+    """
     source_card = get_existing_card(collection, source_card_id)
     if source_card is None:
         raise ValueError("The selected source card for review history could not be found.")
@@ -127,14 +134,22 @@ def preserve_review_history_for_new_note(collection, source_card_id, target_note
     copy_card_state(source_card, target_card)
     collection.update_card(target_card)
 
-    copied_rows = build_copied_revlog_rows(collection, source_card.id, target_card.id)
+    return source_card.id, target_card.id
+
+
+def copy_revlog_rows(collection, source_card_id, target_card_id):
+    """Copy review-log rows from source card to target card.
+
+    This uses raw SQL (collection.db.executemany) which bypasses the undo
+    system and clears the undo stack.  It must be called AFTER
+    merge_undo_entries() has already sealed the undo group.
+    """
+    copied_rows = build_copied_revlog_rows(collection, source_card_id, target_card_id)
     if copied_rows:
         collection.db.executemany(
             "insert into revlog values (?,?,?,?,?,?,?,?,?)",
             copied_rows,
         )
-
-    return target_card.id
 
 
 def remove_note_safely(collection, note_id):
@@ -262,9 +277,11 @@ def perform_merge(
         showInfo(f"Error adding merged note: {e}", parent=parent)
         return False
 
+    # --- Undoable card-state copy (must happen before merge_undo_entries) ---
+    revlog_copy_ids = None
     if preserve_review_history:
         try:
-            preserve_review_history_for_new_note(
+            revlog_copy_ids = copy_card_state_for_new_note(
                 mw.col,
                 review_history_source_card_id,
                 new_note.id,
@@ -275,10 +292,7 @@ def perform_merge(
             return False
 
     if delete_originals:
-        # Delete original notes
-        # In newer Anki versions, mw.col.remove_notes expects a list of node ids.
         try:
-            # For older and newer Anki compatibility
             if hasattr(mw.col, 'remove_notes'):
                 mw.col.remove_notes(valid_note_ids)
             else:
@@ -286,11 +300,20 @@ def perform_merge(
         except Exception as e:
             showInfo(f"Error deleting original notes: {e}", parent=parent)
 
-    # Merge undos conditionally (2.1.45+)
+    # --- Seal the undo group BEFORE any raw SQL writes ---
+    # merge_undo_entries collapses add_note + update_card + remove_notes
+    # into a single "Merge Notes" undo step.
     if current_undo is not None and hasattr(mw.col, 'merge_undo_entries'):
         try:
             mw.col.merge_undo_entries(current_undo)
         except Exception:
             pass
+
+    # --- Raw SQL revlog copy (not undoable, runs AFTER undo group is sealed) ---
+    if revlog_copy_ids is not None:
+        try:
+            copy_revlog_rows(mw.col, revlog_copy_ids[0], revlog_copy_ids[1])
+        except Exception:
+            pass  # revlog copy failure is non-fatal; warning already shown in UI
 
     return new_note.id
