@@ -500,7 +500,9 @@ class MergeDialog(QDialog):
                         vbar = self.browser.table.verticalScrollBar()
                         old_pos = vbar.value()
                         
-                        # Refresh the model data without a full search reset
+                        # Modern Anki: update_list() correctly removes deleted/ghost notes 
+                        # from the browser view without triggering a full search reset 
+                        # or forcing the scrollbar to jump to the top.
                         self.browser.table.update_list()
                         
                         # Restore scroll position
