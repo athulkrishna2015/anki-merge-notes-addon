@@ -74,7 +74,11 @@ If you find this add-on useful, please consider supporting its development:
 
 ## Changelog
 
-**2026-04-24 **
+**2026-04-28**
+- Improved browser behavior: successfully merging notes no longer causes the browser list to jump to the top or reset its scroll position when "Open newly created note" is unchecked.
+- Surgical refresh: implemented targeted list updates that preserve your current view context even after notes are merged or deleted.
+
+**2026-04-24**
 - Auto-select the same note type as target when all selected notes share the same type.
 - Improved undo reliability: reordered internal operations so the undo group is sealed before any raw database writes.
 - Fixed the post-merge browser refresh path so Ctrl+Z cleanly removes the merged note while restoring the originals.

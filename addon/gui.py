@@ -495,13 +495,22 @@ class MergeDialog(QDialog):
                     pass
             else:
                 try:
-                    if hasattr(self.browser, 'searchFor'):
-                        self.browser.searchFor(self.browser.form.searchEdit.lineEdit().text())
+                    if hasattr(self.browser, "table") and hasattr(self.browser.table, "update_list"):
+                        # Save scroll position
+                        vbar = self.browser.table.verticalScrollBar()
+                        old_pos = vbar.value()
+                        
+                        # Refresh the model data without a full search reset
+                        self.browser.table.update_list()
+                        
+                        # Restore scroll position
+                        QTimer.singleShot(0, lambda: vbar.setValue(old_pos))
+                    elif hasattr(self.browser, 'searchFor'):
+                        # Fallback for older versions: mw.requireReset() is safer 
+                        # than searchFor() for avoiding jarring jumps.
+                        self.mw.requireReset()
                     else:
-                        if hasattr(self.browser, 'onSearchActivated'):
-                            self.browser.onSearchActivated()
-                        else:
-                            self.browser.onSearch()
+                        self.mw.requireReset()
                 except Exception:
                     pass
 
