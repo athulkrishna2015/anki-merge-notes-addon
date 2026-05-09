@@ -143,27 +143,17 @@ def copy_card_state_for_new_note(collection, source_card_id, target_note_id):
 def copy_revlog_rows(collection, source_card_id, target_card_id):
     """Copy review-log rows from source card to target card.
 
-    Uses a separate sqlite3 connection to avoid triggering Anki's
-    undo-stack clear. This is safe to call after Anki has released
-    its file lock.
+    Uses collection.db directly for maximum speed and zero locking.
+    Note: This may clear the undo stack on some Anki versions.
     """
-    import sqlite3
-
     copied_rows = build_copied_revlog_rows(collection, source_card_id, target_card_id)
     if not copied_rows:
         return
 
-    db_path = collection.path
-    # Increased timeout to handle potential background WAL syncing
-    conn = sqlite3.connect(db_path, timeout=5)
-    try:
-        conn.executemany(
-            "INSERT INTO revlog VALUES (?,?,?,?,?,?,?,?,?)",
-            copied_rows,
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    collection.db.executemany(
+        "INSERT INTO revlog VALUES (?,?,?,?,?,?,?,?,?)",
+        copied_rows,
+    )
 
 def remove_note_safely(collection, note_id):
     try:
@@ -341,6 +331,18 @@ def perform_merge(
         except Exception:
             pass
 
-    # Return the new note ID and information needed to copy history
-    logger.log(f"perform_merge phase 1 completed in {time.time() - overall_start:.4f}s")
-    return new_note.id, revlog_copy_ids
+    # --- Revlog copy (raw SQL, runs AFTER undo group is sealed) ---
+    # This must come after merge_undo_entries so the undo group is already
+    # sealed before any raw DB writes.
+    if revlog_copy_ids is not None:
+        try:
+            start = time.time()
+            copy_revlog_rows(mw.col, revlog_copy_ids[0], revlog_copy_ids[1])
+            logger.log(f"Copied revlog rows in {time.time() - start:.4f}s")
+            logger.log("Note: Review history copy may clear the Undo stack.")
+        except Exception as e:
+            logger.log(f"Error copying revlog rows: {e}")
+            pass
+
+    logger.log(f"perform_merge completed in {time.time() - overall_start:.4f}s")
+    return new_note.id

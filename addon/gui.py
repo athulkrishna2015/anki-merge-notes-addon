@@ -598,7 +598,7 @@ class MergeDialog(QDialog):
             field_mapping,
         )
 
-        result = perform_merge(
+        new_note_id = perform_merge(
             self.mw,
             target_model_id,
             target_deck_id,
@@ -612,29 +612,7 @@ class MergeDialog(QDialog):
             parent_window=self,
         )
 
-        if result:
-            new_note_id, revlog_copy_ids = result
-
-            # --- Delayed Background History Copy ---
-            # We use a brief delay to ensure Anki's main process has finished its
-            # current transaction and released the database file lock. This
-            # keeps the Undo button working perfectly.
-            if revlog_copy_ids:
-                from .merger import copy_revlog_rows
-                def copy_history_in_background():
-                    start_bg = time.time()
-                    try:
-                        # Force Anki to commit its transaction to release the DB lock
-                        if hasattr(self.mw.col, 'save'):
-                            self.mw.col.save()
-
-                        copy_revlog_rows(self.mw.col, revlog_copy_ids[0], revlog_copy_ids[1])
-                        logger.log(f"History background copy successful in {time.time() - start_bg:.4f}s")
-                    except Exception as bg_e:
-                        logger.log(f"Background history copy failed: {bg_e}")
-
-                QTimer.singleShot(250, copy_history_in_background)
-
+        if new_note_id:
             # Refresh the browser without a full mw.reset(), which can
             # interfere with custom undo bookkeeping on some Anki versions.
             if open_new_note:
