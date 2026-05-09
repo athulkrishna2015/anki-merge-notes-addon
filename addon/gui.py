@@ -631,9 +631,10 @@ class MergeDialog(QDialog):
 
                 QTimer.singleShot(250, copy_history_in_background)
 
-            # Refresh the browser without a full mw.reset()
-        # ... (rest of search/table update logic)
-
+            # Refresh the browser without a full mw.reset(), which can
+            # interfere with custom undo bookkeeping on some Anki versions.
+            if open_new_note:
+                try:
                     if hasattr(self.browser, 'searchFor'):
                         self.browser.searchFor(f"nid:{new_note_id}")
                     else:
