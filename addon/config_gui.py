@@ -3,6 +3,8 @@ from aqt.qt import *
 from aqt import mw
 from aqt.webview import AnkiWebView
 
+from .gui import logger
+
 class ConfigDialog(QDialog):
     def __init__(self, addon_id, parent=None):
         super().__init__(parent)
@@ -13,6 +15,22 @@ class ConfigDialog(QDialog):
         self.mw = mw
         self.config = mw.addonManager.getConfig(self.addon_id) or {}
         self.setup_ui()
+        
+        # Live Logs Setup
+        logger.add_listener(self.on_new_log)
+
+    def on_new_log(self, entry):
+        if entry is None:
+            self.log_viewer.setPlainText("")
+        else:
+            self.log_viewer.append(entry)
+            self.log_viewer.verticalScrollBar().setValue(
+                self.log_viewer.verticalScrollBar().maximum()
+            )
+
+    def closeEvent(self, event):
+        logger.remove_listener(self.on_new_log)
+        super().closeEvent(event)
     
     def setup_ui(self):
         main_layout = QVBoxLayout()
@@ -48,11 +66,35 @@ class ConfigDialog(QDialog):
         self.open_new_note_cb.setChecked(self.config.get("default_open_new_note", True))
         form.addRow("", self.open_new_note_cb)
         
+        self.clear_logs_on_startup_cb = QCheckBox("Clear Logs on Startup")
+        self.clear_logs_on_startup_cb.setChecked(self.config.get("clear_logs_on_startup", True))
+        form.addRow("", self.clear_logs_on_startup_cb)
+
         config_layout.addLayout(form)
         config_layout.addStretch()
         config_tab.setLayout(config_layout)
         
-        # --- TAB 2: Support ---
+        # --- TAB 2: Logs ---
+        logs_tab = QWidget()
+        logs_layout = QVBoxLayout()
+        self.log_viewer = QTextEdit()
+        self.log_viewer.setReadOnly(True)
+        self.log_viewer.setPlainText(logger.get_logs())
+        self.log_viewer.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+        logs_layout.addWidget(self.log_viewer)
+        
+        logs_btn_layout = QHBoxLayout()
+        copy_logs_btn = QPushButton("Copy Logs")
+        copy_logs_btn.clicked.connect(lambda: QApplication.clipboard().setText(logger.get_logs()))
+        logs_btn_layout.addWidget(copy_logs_btn)
+        
+        clear_logs_btn = QPushButton("Clear Logs")
+        clear_logs_btn.clicked.connect(self._clear_logs)
+        logs_btn_layout.addWidget(clear_logs_btn)
+        logs_layout.addLayout(logs_btn_layout)
+        logs_tab.setLayout(logs_layout)
+
+        # --- TAB 3: Support ---
         support_tab = QWidget()
         support_layout = QVBoxLayout()
 
@@ -121,6 +163,7 @@ class ConfigDialog(QDialog):
         
         # Add tabs
         self.tabs.addTab(config_tab, "Options")
+        self.tabs.addTab(logs_tab, "Logs")
         self.tabs.addTab(support_tab, "Support")
         
         main_layout.addWidget(self.tabs)
@@ -131,7 +174,11 @@ class ConfigDialog(QDialog):
         main_layout.addWidget(btn_box)
         
         self.setLayout(main_layout)
-        
+
+    def _clear_logs(self):
+        logger.clear()
+        self.log_viewer.setPlainText("")
+
     def accept(self):
         self.config["default_separator"] = self.separator_input.text()
         self.config["default_remove_cloze"] = self.remove_cloze_cb.isChecked()
@@ -140,6 +187,7 @@ class ConfigDialog(QDialog):
             self.preserve_review_history_cb.isChecked()
         )
         self.config["default_open_new_note"] = self.open_new_note_cb.isChecked()
+        self.config["clear_logs_on_startup"] = self.clear_logs_on_startup_cb.isChecked()
         
         self.mw.addonManager.writeConfig(self.addon_id, self.config)
         super().accept()

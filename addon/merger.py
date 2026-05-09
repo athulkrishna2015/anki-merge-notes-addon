@@ -1,9 +1,12 @@
 import re
+import time
 from aqt.utils import showInfo, askUser
+from .gui import logger
 
 try:
     from anki.consts import CARD_TYPE_LRN, CARD_TYPE_NEW, QUEUE_TYPE_NEW, QUEUE_TYPE_PREVIEW
 except Exception:
+# ... (rest of imports/consts)
     CARD_TYPE_LRN = 1
     CARD_TYPE_NEW = 0
     QUEUE_TYPE_NEW = 0
@@ -94,22 +97,22 @@ def build_copied_revlog_rows(collection, source_card_id, target_card_id):
         return []
 
     copied_rows = []
-    next_candidate = None
     current_usn = collection.usn() if hasattr(collection, "usn") else None
+
+    # Optimization: Use a local counter to avoid repeated scalar queries.
+    # We find a safe starting point (max ID + 1) and then just increment.
+    max_revlog_id = collection.db.scalar("select max(id) from revlog") or 0
+    next_id = max_revlog_id + 1
 
     for row in source_rows:
         copied_row = list(row)
-        base_id = int(copied_row[0])
-        candidate_id = base_id if next_candidate is None else max(base_id, next_candidate)
-        while collection.db.scalar("select 1 from revlog where id = ?", candidate_id):
-            candidate_id += 1
-
-        copied_row[0] = candidate_id
+        copied_row[0] = next_id
         copied_row[1] = target_card_id
         if current_usn is not None:
             copied_row[2] = current_usn
+        
         copied_rows.append(tuple(copied_row))
-        next_candidate = candidate_id + 1
+        next_id += 1
 
     return copied_rows
 
@@ -140,10 +143,9 @@ def copy_card_state_for_new_note(collection, source_card_id, target_note_id):
 def copy_revlog_rows(collection, source_card_id, target_card_id):
     """Copy review-log rows from source card to target card.
 
-    Uses a direct sqlite3 connection instead of collection.db to avoid
-    clearing the undo stack.  Anki's col.db proxy notifies the backend
-    of writes which triggers an undo-stack clear; a separate connection
-    bypasses that entirely.
+    Uses a separate sqlite3 connection to avoid triggering Anki's
+    undo-stack clear. This requires mw.col.save() to be called first
+    to release the database lock.
     """
     import sqlite3
 
@@ -152,7 +154,7 @@ def copy_revlog_rows(collection, source_card_id, target_card_id):
         return
 
     db_path = collection.path
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=10)
     try:
         conn.executemany(
             "INSERT INTO revlog VALUES (?,?,?,?,?,?,?,?,?)",
@@ -187,6 +189,8 @@ def perform_merge(
     parent_window=None,
 ):
     parent = parent_window or mw
+    overall_start = time.time()
+    logger.log(f"Starting perform_merge for {len(selected_note_ids)} notes.")
 
     if target_model_id is None:
         showInfo("Please choose a target note type.", parent=parent)
@@ -196,7 +200,9 @@ def perform_merge(
         showInfo("Please choose a target deck.", parent=parent)
         return False
 
+    start = time.time()
     selected_notes, valid_note_ids = get_existing_notes(mw.col, selected_note_ids)
+    logger.log(f"Fetched existing notes in {time.time() - start:.4f}s")
 
     if not selected_notes:
         showInfo("No valid notes found to merge.", parent=parent)
@@ -218,6 +224,7 @@ def perform_merge(
             return False
 
     if delete_originals:
+        start = time.time()
         mapped_source_fields = {src for mapped_list in field_mapping.values() for src in mapped_list}
         unmapped_non_empty = set()
         for note in selected_notes:
@@ -226,6 +233,7 @@ def perform_merge(
                 if field not in mapped_source_fields and note[field].strip():
                     unmapped_non_empty.add(field)
 
+        logger.log(f"Checked for unmapped fields in {time.time() - start:.4f}s")
         if unmapped_non_empty:
             field_list_str = ", ".join(sorted(unmapped_non_empty))
             warning_msg = (
@@ -234,9 +242,11 @@ def perform_merge(
                 f"Do you want to proceed with the merge?"
             )
             if not askUser(warning_msg, parent=parent):
+                logger.log("Merge aborted by user due to data loss warning.")
                 return False
 
     # Single Undo Setup
+    start = time.time()
     current_undo = None
     if hasattr(mw.col, 'add_custom_undo_entry'):
         current_undo = mw.col.add_custom_undo_entry("Merge Notes")
@@ -244,6 +254,7 @@ def perform_merge(
         current_undo = mw.col.undo_status().last_step
     else:
         mw.checkpoint("Merge Notes")
+    logger.log(f"Undo setup in {time.time() - start:.4f}s")
 
     # Create new note
     target_model = mw.col.models.get(target_model_id)
@@ -254,14 +265,17 @@ def perform_merge(
     new_note = mw.col.new_note(target_model)
 
     # Gather tags
+    start = time.time()
     all_tags = set()
     for note in selected_notes:
         for tag in note.tags:
             all_tags.add(tag)
 
     new_note.tags = sorted(all_tags)
+    logger.log(f"Gathered tags in {time.time() - start:.4f}s")
 
     # Dictionary to collect merged values
+    start = time.time()
     merged_values = {f_name: [] for f_name in field_mapping}
 
     for note in selected_notes:
@@ -281,9 +295,12 @@ def perform_merge(
                 combined_text = remove_cloze_syntax(combined_text)
             
             new_note[f_name] = combined_text
+    logger.log(f"Prepared merged field values in {time.time() - start:.4f}s")
 
     try:
+        start = time.time()
         mw.col.add_note(new_note, target_deck_id)
+        logger.log(f"Added new note in {time.time() - start:.4f}s")
     except Exception as e:
         showInfo(f"Error adding merged note: {e}", parent=parent)
         return False
@@ -292,11 +309,13 @@ def perform_merge(
     revlog_copy_ids = None
     if preserve_review_history:
         try:
+            start = time.time()
             revlog_copy_ids = copy_card_state_for_new_note(
                 mw.col,
                 review_history_source_card_id,
                 new_note.id,
             )
+            logger.log(f"Copied card state in {time.time() - start:.4f}s")
         except Exception as e:
             remove_note_safely(mw.col, new_note.id)
             showInfo(f"Error preserving review history: {e}", parent=parent)
@@ -304,10 +323,12 @@ def perform_merge(
 
     if delete_originals:
         try:
+            start = time.time()
             if hasattr(mw.col, 'remove_notes'):
                 mw.col.remove_notes(valid_note_ids)
             else:
                 mw.col.remNotes(valid_note_ids)
+            logger.log(f"Deleted original notes in {time.time() - start:.4f}s")
         except Exception as e:
             showInfo(f"Error deleting original notes: {e}", parent=parent)
 
@@ -316,7 +337,9 @@ def perform_merge(
     # into a single "Merge Notes" undo step.
     if current_undo is not None and hasattr(mw.col, 'merge_undo_entries'):
         try:
+            start = time.time()
             mw.col.merge_undo_entries(current_undo)
+            logger.log(f"Merged undo entries in {time.time() - start:.4f}s")
         except Exception:
             pass
 
@@ -325,8 +348,18 @@ def perform_merge(
     # sealed before any raw DB writes.
     if revlog_copy_ids is not None:
         try:
+            start = time.time()
+            # Force Anki to commit its transaction to release the DB lock
+            # for the separate connection.
+            mw.col.save()
+            logger.log(f"Committed Anki transaction in {time.time() - start:.4f}s")
+            
+            start = time.time()
             copy_revlog_rows(mw.col, revlog_copy_ids[0], revlog_copy_ids[1])
-        except Exception:
+            logger.log(f"Copied revlog rows in {time.time() - start:.4f}s")
+        except Exception as e:
+            logger.log(f"Error copying revlog rows: {e}")
             pass
 
+    logger.log(f"perform_merge completed in {time.time() - overall_start:.4f}s")
     return new_note.id

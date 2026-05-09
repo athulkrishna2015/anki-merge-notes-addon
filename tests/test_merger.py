@@ -33,16 +33,30 @@ def load_merger_module(show_info_calls, ask_user_calls=None, ask_user_responses=
     utils_module.askUser = ask_user
     aqt_module.utils = utils_module
 
+    # Mock the gui module for the merger import
+    gui_module = types.ModuleType("gui")
+    class FakeLogger:
+        def log(self, msg): pass
+    gui_module.logger = FakeLogger()
+
+    # Create a dummy package to hold the modules
+    package_name = "test_addon"
+    package_module = types.ModuleType(package_name)
+    package_module.__path__ = []
+
     previous_modules = {
-        name: sys.modules.get(name) for name in ("aqt", "aqt.utils")
+        name: sys.modules.get(name) for name in ("aqt", "aqt.utils", package_name, f"{package_name}.gui")
     }
     sys.modules["aqt"] = aqt_module
     sys.modules["aqt.utils"] = utils_module
+    sys.modules[package_name] = package_module
+    sys.modules[f"{package_name}.gui"] = gui_module
 
     try:
-        spec = importlib.util.spec_from_file_location("test_merger_module", MERGER_PATH)
+        spec = importlib.util.spec_from_file_location(f"{package_name}.merger", MERGER_PATH)
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
+        sys.modules[f"{package_name}.merger"] = module
         spec.loader.exec_module(module)
         return module
     finally:
@@ -147,6 +161,8 @@ class FakeDB:
         if sql == "select 1 from revlog where id = ?":
             revlog_id = args[0]
             return 1 if any(row[0] == revlog_id for row in self.revlog_rows) else None
+        if sql == "select max(id) from revlog":
+            return max([row[0] for row in self.revlog_rows]) if self.revlog_rows else 0
         raise AssertionError(f"Unexpected scalar query: {sql}")
 
     def executemany(self, sql, args):
@@ -255,6 +271,9 @@ class FakeCollection:
 
     def merge_undo_entries(self, token):
         self.merged_undo_token = token
+
+    def save(self):
+        pass
 
     def __del__(self):
         try:
