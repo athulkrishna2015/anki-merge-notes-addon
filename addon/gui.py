@@ -624,6 +624,10 @@ class MergeDialog(QDialog):
                 def copy_history_in_background():
                     start_bg = time.time()
                     try:
+                        # Force Anki to commit its transaction to release the DB lock
+                        if hasattr(self.mw.col, 'save'):
+                            self.mw.col.save()
+
                         copy_revlog_rows(self.mw.col, revlog_copy_ids[0], revlog_copy_ids[1])
                         logger.log(f"History background copy successful in {time.time() - start_bg:.4f}s")
                     except Exception as bg_e:
