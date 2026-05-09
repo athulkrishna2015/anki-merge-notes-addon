@@ -331,7 +331,7 @@ class MergerTests(unittest.TestCase):
         )
         main_window = FakeMainWindow(collection)
 
-        new_note_id = merger.perform_merge(
+        result = merger.perform_merge(
             main_window,
             101,
             202,
@@ -341,6 +341,7 @@ class MergerTests(unittest.TestCase):
             True,
             [1, 404, 2],
         )
+        new_note_id, _ = result
 
         self.assertEqual(new_note_id, 999)
         self.assertEqual(collection.added_deck_id, 202)
@@ -389,7 +390,7 @@ class MergerTests(unittest.TestCase):
         )
         main_window = FakeMainWindow(collection)
 
-        new_note_id = merger.perform_merge(
+        result = merger.perform_merge(
             main_window,
             101,
             202,
@@ -401,6 +402,11 @@ class MergerTests(unittest.TestCase):
             True,
             501,
         )
+        new_note_id, revlog_copy_ids = result
+        
+        # Manually trigger the copy which now happens in background/separately
+        if revlog_copy_ids:
+            merger.copy_revlog_rows(collection, revlog_copy_ids[0], revlog_copy_ids[1])
 
         self.assertEqual(new_note_id, 999)
         self.assertEqual(collection.updated_card_ids, [2001])
@@ -477,7 +483,7 @@ class MergerTests(unittest.TestCase):
             collection = RealCollection(collection_path)
             main_window = FakeMainWindow(collection)
 
-            new_note_id = merger.perform_merge(
+            result = merger.perform_merge(
                 main_window,
                 collection.models.by_name("Basic")["id"],
                 collection.decks.id("Default"),
@@ -489,6 +495,7 @@ class MergerTests(unittest.TestCase):
                 True,
                 source_card_id,
             )
+            new_note_id, _ = result
 
             self.assertTrue(new_note_id)
             self.assertEqual(list(collection.find_notes("")), [new_note_id])
@@ -615,8 +622,9 @@ class MergerTests(unittest.TestCase):
             True,  # delete originals
             [1],
         )
+        new_note_id, _ = result
 
-        self.assertEqual(result, 999)
+        self.assertEqual(new_note_id, 999)
         self.assertEqual(len(ask_user_calls), 1)
 
 
