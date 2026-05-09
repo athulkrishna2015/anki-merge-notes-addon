@@ -12,14 +12,16 @@ Install from [AnkiWeb](https://ankiweb.net/shared/info/1774874894)
 - **Custom Separator:** Choose a custom text or HTML separator (like `<br><hr><br>`) to insert between the merged contents.
 - **Remove Cloze Syntax:** Option to automatically strip out `{{c1::...}}` syntax from the combined text, keeping only the raw text, which is especially useful when merging cloze notes into a basic non-cloze note type.
 - **Automatic Cleanup:** Option to automatically delete the original source notes after a successful merge.
-- **Optional Review History Preservation:** Optionally copy the scheduling state and review history from one selected source card onto the merged card.
+- **Zero-Hang Review History Preservation:** Preserves review history in a background thread to prevent UI freezes while ensuring the merged card retains its full study history.
+- **Full Undo Support:** The entire merge operation is fully undoable via Ctrl+Z, even when history is preserved.
+- **Live Operation Logs:** View high-resolution timing for every internal operation in the new "Logs" tab for full transparency.
+- **Dedicated Workflow Buttons:** Choice between "Merge" (to see logs) and "Merge and Close" for a faster workflow.
 - **Tags Preservation:** The newly merged note will inherit all tags from the original notes.
 - **Intelligent Field Matching:** Automatically suggests the best source field for each target field based on name similarity.
 - **Persistent Preferences:** The add-on remembers your field mappings per Note Type, selected Target Deck, custom separator, and other options across Anki sessions, including multi-source mappings.
 - **Auto-Detection:** Automatically suggests the target deck based on the deck of your originally selected notes.
 - **Safer Merge Validation:** Missing source notes or invalid target selections are detected before merge/delete actions are applied.
 - **Data Loss Prevention:** Warns you before merging if unmapped fields containing valuable data are going to be permanently lost when original notes are deleted.
-- **Cleaner Undo:** The entire merge operation and its side-effects consolidate into a single properly named "Merge Notes" undo action for an easy rollback.
 
 ## ⚠️ Important: Review History & Duplicate Cards
 
@@ -73,6 +75,13 @@ If you find this add-on useful, please consider supporting its development:
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D01W6NQT)
 
 ## Changelog
+
+**2026-05-09 (v1.2.5)**
+- **Restored Undo:** Fixed a conflict where history preservation would break Anki's Undo stack; Ctrl+Z now works perfectly again.
+- **Eliminated UI Hangs:** Review history is now copied in a background thread with automatic lock retries, ensuring the Anki UI never freezes or hangs.
+- **Live Logs:** Added a "Logs" tab to both the Merge dialog and Configuration window to show real-time timing for every step of the merge.
+- **New Action Buttons:** Added dedicated "Merge" and "Merge and Close" buttons for more control over the workflow.
+- **Log Management:** Added "Copy Logs" and "Clear Logs" features, plus an option to automatically clear logs on startup.
 
 **2026-04-28**
 - Improved browser behavior: successfully merging notes no longer causes the browser list to jump to the top or reset its scroll position when "Open newly created note" is unchecked.
