@@ -147,6 +147,7 @@ class FakeCard:
 class FakeDB:
     def __init__(self, revlog_rows=None):
         self.revlog_rows = list(revlog_rows or [])
+        self._db = self
 
     def all(self, sql, *args):
         if sql == "select * from revlog where cid = ? order by id":
@@ -166,9 +167,10 @@ class FakeDB:
         raise AssertionError(f"Unexpected scalar query: {sql}")
 
     def executemany(self, sql, args):
-        if sql != "insert into revlog values (?,?,?,?,?,?,?,?,?)":
+        if sql.lower() != "insert into revlog values (?,?,?,?,?,?,?,?,?)":
             raise AssertionError(f"Unexpected executemany query: {sql}")
         self.revlog_rows.extend(list(args))
+        return None
 
 
 class FakeCollection:
@@ -331,7 +333,7 @@ class MergerTests(unittest.TestCase):
         )
         main_window = FakeMainWindow(collection)
 
-        result = merger.perform_merge(
+        new_note_id = merger.perform_merge(
             main_window,
             101,
             202,
@@ -341,7 +343,6 @@ class MergerTests(unittest.TestCase):
             True,
             [1, 404, 2],
         )
-        new_note_id, _ = result
 
         self.assertEqual(new_note_id, 999)
         self.assertEqual(collection.added_deck_id, 202)
@@ -390,7 +391,7 @@ class MergerTests(unittest.TestCase):
         )
         main_window = FakeMainWindow(collection)
 
-        result = merger.perform_merge(
+        new_note_id = merger.perform_merge(
             main_window,
             101,
             202,
@@ -401,12 +402,8 @@ class MergerTests(unittest.TestCase):
             [1],
             True,
             501,
+            synchronous_history=True,
         )
-        new_note_id, revlog_copy_ids = result
-        
-        # Manually trigger the copy which now happens in background/separately
-        if revlog_copy_ids:
-            merger.copy_revlog_rows(collection, revlog_copy_ids[0], revlog_copy_ids[1])
 
         self.assertEqual(new_note_id, 999)
         self.assertEqual(collection.updated_card_ids, [2001])
@@ -483,7 +480,7 @@ class MergerTests(unittest.TestCase):
             collection = RealCollection(collection_path)
             main_window = FakeMainWindow(collection)
 
-            result = merger.perform_merge(
+            new_note_id = merger.perform_merge(
                 main_window,
                 collection.models.by_name("Basic")["id"],
                 collection.decks.id("Default"),
@@ -494,8 +491,8 @@ class MergerTests(unittest.TestCase):
                 note_ids,
                 True,
                 source_card_id,
+                synchronous_history=True,
             )
-            new_note_id, _ = result
 
             self.assertTrue(new_note_id)
             self.assertEqual(list(collection.find_notes("")), [new_note_id])
@@ -622,9 +619,8 @@ class MergerTests(unittest.TestCase):
             True,  # delete originals
             [1],
         )
-        new_note_id, _ = result
 
-        self.assertEqual(new_note_id, 999)
+        self.assertEqual(result, 999)
         self.assertEqual(len(ask_user_calls), 1)
 
 
