@@ -1,7 +1,9 @@
+from __future__ import annotations
 import os
 import argparse
 import sys
 import zipfile
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -45,6 +47,36 @@ def resolve_build_version(
     print(f"Using explicit version: {version}")
     return version
 
+def get_ignored_files(addon_path: Path) -> set[Path]:
+    """Uses git check-ignore to find ignored files in addon_path, returning a set of absolute Paths."""
+    ignored = set()
+    all_files = []
+    for root, _, files in os.walk(addon_path):
+        for file in files:
+            all_files.append(Path(root) / file)
+            
+    if not all_files:
+        return ignored
+
+    try:
+        paths_input = "\n".join(str(p.resolve()) for p in all_files)
+        process = subprocess.Popen(
+            ["git", "check-ignore", "--stdin"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8"
+        )
+        stdout, _ = process.communicate(input=paths_input)
+        if process.returncode in (0, 1):
+            for line in stdout.splitlines():
+                if line.strip():
+                    ignored.add(Path(line.strip()).resolve())
+    except Exception:
+        pass
+    return ignored
+
 def create_ankiaddon(explicit_version: str | None = None) -> int:
     # Get the project root and addon directory
     root_dir = Path(__file__).resolve().parent
@@ -69,6 +101,13 @@ def create_ankiaddon(explicit_version: str | None = None) -> int:
 
     print(f"Creating {final_name} from {ADDON_DIR}...")
 
+    # Get gitignored files
+    ignored_paths = set()
+    try:
+        ignored_paths = get_ignored_files(addon_path)
+    except Exception:
+        pass
+
     with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
         # Walk through the addon directory specifically
         for root, dirs, files in os.walk(addon_path):
@@ -79,6 +118,9 @@ def create_ankiaddon(explicit_version: str | None = None) -> int:
                 file_path = Path(root) / file
                 # Skip excluded files/extensions
                 if file in exclude_files or file_path.suffix in exclude_exts:
+                    continue
+                # Skip gitignored files
+                if file_path.resolve() in ignored_paths:
                     continue
                 
                 # Calculate the path relative to the 'addon/' folder 

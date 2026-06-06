@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import sqlite3
 import sys
 import tempfile
@@ -35,9 +36,12 @@ def load_merger_module(show_info_calls, ask_user_calls=None, ask_user_responses=
 
     # Mock the gui module for the merger import
     gui_module = types.ModuleType("gui")
+    logger_module = types.ModuleType("logger")
     class FakeLogger:
         def log(self, msg): pass
-    gui_module.logger = FakeLogger()
+    fake_logger = FakeLogger()
+    gui_module.logger = fake_logger
+    logger_module.logger = fake_logger
 
     # Create a dummy package to hold the modules
     package_name = "test_addon"
@@ -45,12 +49,13 @@ def load_merger_module(show_info_calls, ask_user_calls=None, ask_user_responses=
     package_module.__path__ = []
 
     previous_modules = {
-        name: sys.modules.get(name) for name in ("aqt", "aqt.utils", package_name, f"{package_name}.gui")
+        name: sys.modules.get(name) for name in ("aqt", "aqt.utils", package_name, f"{package_name}.gui", f"{package_name}.logger")
     }
     sys.modules["aqt"] = aqt_module
     sys.modules["aqt.utils"] = utils_module
     sys.modules[package_name] = package_module
     sys.modules[f"{package_name}.gui"] = gui_module
+    sys.modules[f"{package_name}.logger"] = logger_module
 
     try:
         spec = importlib.util.spec_from_file_location(f"{package_name}.merger", MERGER_PATH)
@@ -623,6 +628,163 @@ class MergerTests(unittest.TestCase):
         self.assertEqual(result, 999)
         self.assertEqual(len(ask_user_calls), 1)
 
+    def test_perform_merge_with_ai_hints(self):
+        show_info_calls = []
+        merger = load_merger_module(show_info_calls)
+        target_model = {"flds": [{"name": "Combined"}]}
+        
+        # Note 1 has a c1 hint block
+        val1 = (
+            "{{c1::George}} is here.<br><br>"
+            "<div class=\"ai-hints-json\" data-ai-hints-addon-id=\"2119980872\" "
+            "contenteditable=\"false\" data-show-hints=\"true\" data-show-options=\"true\" style=\"display:none\">"
+            "{\n"
+            "  \"c1\": {\n"
+            "    \"hints\": [\"Hint A\"],\n"
+            "    \"options\": [\"Opt A\"],\n"
+            "    \"correct_answer\": \"George\",\n"
+            "    \"_provider\": \"antigravity\"\n"
+            "  }\n"
+            "}</div>"
+        )
+        
+        # Note 2 has c1 and c2 hint blocks
+        val2 = (
+            "{{c2::Kakkanadan}} was a writer.<br><br>"
+            "<div class=\"ai-hints-json\" data-ai-hints-addon-id=\"2119980872\" "
+            "contenteditable=\"false\" data-show-hints=\"true\" data-show-options=\"true\" style=\"display:none\">"
+            "{\n"
+            "  \"c1\": {\n"
+            "    \"hints\": [\"Hint B\"],\n"
+            "    \"options\": [\"Opt B\"],\n"
+            "    \"correct_answer\": \"George\"\n"
+            "  },\n"
+            "  \"c2\": {\n"
+            "    \"hints\": [\"Hint C\"],\n"
+            "    \"options\": [\"Opt C\"]\n"
+            "  }\n"
+            "}</div>"
+        )
+        
+        collection = FakeCollection(
+            notes={
+                1: FakeNote(1, {"Combined": val1}),
+                2: FakeNote(2, {"Combined": val2}),
+            },
+            target_model=target_model,
+        )
+        main_window = FakeMainWindow(collection)
+
+        result_id = merger.perform_merge(
+            main_window,
+            101,
+            202,
+            {"Combined": ["Combined"]},
+            " / ",
+            False,
+            False,
+            [1, 2],
+        )
+
+        self.assertEqual(result_id, 999)
+        combined_val = collection.added_note["Combined"]
+        
+        # Main text should be joined, and contain no ai-hints blocks in the middle
+        self.assertTrue(combined_val.startswith("{{c1::George}} is here. / {{c2::Kakkanadan}} was a writer."))
+        
+        # Ensure the ai-hints-json div is at the end of the field
+        self.assertIn("<div class=\"ai-hints-json\"", combined_val)
+        
+        # Let's extract and parse the merged json to verify correctness
+        match = re.search(r'<div class="ai-hints-json"[^>]*>(.*?)</div>', combined_val, re.DOTALL)
+        self.assertTrue(match)
+        
+        import html
+        import json
+        parsed = json.loads(html.unescape(match.group(1)))
+        
+        # Check merged c1 hints/options/correct_answer/metadata
+        self.assertEqual(parsed["c1"]["hints"], ["Hint A", "Hint B"])
+        self.assertEqual(parsed["c1"]["options"], ["Opt A", "Opt B"])
+        self.assertEqual(parsed["c1"]["correct_answer"], "George")
+        self.assertEqual(parsed["c1"]["_provider"], "antigravity")
+        
+        # Check c2 hints/options
+        self.assertEqual(parsed["c2"]["hints"], ["Hint C"])
+        self.assertEqual(parsed["c2"]["options"], ["Opt C"])
+
+    def test_perform_merge_with_legacy_and_keyed_ai_hints_and_toggles(self):
+        show_info_calls = []
+        merger = load_merger_module(show_info_calls)
+        target_model = {"flds": [{"name": "Combined"}]}
+        
+        # Note 1 has a legacy/universal flat JSON block
+        val1 = (
+            "Text 1<br>"
+            "<div class=\"ai-hints-json\" data-ai-hints-addon-id=\"2119980872\" "
+            "contenteditable=\"false\" data-show-hints=\"false\" data-show-options=\"true\" style=\"display:none\">"
+            "{\n"
+            "  \"hints\": [\"Legacy Hint\"],\n"
+            "  \"options\": [\"Legacy Opt\"]\n"
+            "}</div>"
+        )
+        
+        # Note 2 has c1 block with <br> tags in json
+        val2 = (
+            "Text 2<br>"
+            "<div class=\"ai-hints-json\" data-ai-hints-addon-id=\"2119980872\" "
+            "contenteditable=\"false\" data-show-hints=\"true\" data-show-options=\"true\" style=\"display:none\">"
+            "{\n"
+            "  \"c1\": {<br>"
+            "    \"hints\": [<br>      \"Keyed Hint\"<br>    ],<br>"
+            "    \"options\": [<br>      \"Keyed Opt\"<br>    ]<br>"
+            "  }\n"
+            "}</div>"
+        )
+        
+        collection = FakeCollection(
+            notes={
+                1: FakeNote(1, {"Combined": val1}),
+                2: FakeNote(2, {"Combined": val2}),
+            },
+            target_model=target_model,
+        )
+        main_window = FakeMainWindow(collection)
+
+        result_id = merger.perform_merge(
+            main_window,
+            101,
+            202,
+            {"Combined": ["Combined"]},
+            " / ",
+            False,
+            False,
+            [1, 2],
+        )
+
+        self.assertEqual(result_id, 999)
+        combined_val = collection.added_note["Combined"]
+        
+        # Verify that toggles are logical-ANDed (hints is false, options is true)
+        self.assertIn('data-show-hints="false"', combined_val)
+        self.assertIn('data-show-options="true"', combined_val)
+        
+        # Verify JSON
+        match = re.search(r'<div class="ai-hints-json"[^>]*>(.*?)</div>', combined_val, re.DOTALL)
+        self.assertTrue(match)
+        
+        import html
+        import json
+        # Unescape and parse
+        cleaned_payload = match.group(1).replace("&nbsp;", " ").replace("\xa0", " ")
+        cleaned_payload = re.sub(r'</?[a-zA-Z][a-zA-Z0-9]*\b[^>]*>', '\n', cleaned_payload)
+        parsed = json.loads(html.unescape(cleaned_payload))
+        
+        # Legacy/universal should be wrapped in "c1" and merged with c1 from Note 2
+        self.assertEqual(parsed["c1"]["hints"], ["Legacy Hint", "Keyed Hint"])
+        self.assertEqual(parsed["c1"]["options"], ["Legacy Opt", "Keyed Opt"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

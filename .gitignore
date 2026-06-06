@@ -145,3 +145,14 @@ cython_debug/
 
 # Anki packages
 *.ankiaddon
+
+# IDE and Editor settings
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS metadata
+.DS_Store
+Thumbs.db
+

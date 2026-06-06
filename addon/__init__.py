@@ -29,6 +29,36 @@ def on_browser_context_menu_init(browser: Browser, menu: QMenu):
 gui_hooks.browser_menus_did_init.append(setup_browser_menu)
 gui_hooks.browser_will_show_context_menu.append(on_browser_context_menu_init)
 
-from .config_gui import show_config
+def check_and_show_support_on_startup():
+    addon_id = __name__.split('.')[0]
+    import os
+    try:
+        base_dir = os.path.dirname(__file__)
+        version_path = os.path.join(base_dir, "VERSION")
+        with open(version_path, "r", encoding="utf-8") as f:
+            version = f.read().strip()
+    except Exception:
+        version = "1.2.5"
+
+    config = mw.addonManager.getConfig(addon_id) or {}
+    if config.get("i_have_supported", False):
+        return
+
+    last_shown = config.get("last_shown_support_version", "")
+    if last_shown == version:
+        return
+
+    config["last_shown_support_version"] = version
+    mw.addonManager.writeConfig(addon_id, config)
+
+    from .gui import show_config
+    show_config(addon_id, start_tab_name="Support")
+
+def on_profile_did_open():
+    QTimer.singleShot(1000, check_and_show_support_on_startup)
+
+gui_hooks.profile_did_open.append(on_profile_did_open)
+
+from .gui import show_config
 mw.addonManager.setConfigAction(__name__, lambda: show_config(__name__))
 

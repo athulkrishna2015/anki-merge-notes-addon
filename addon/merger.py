@@ -1,7 +1,170 @@
 import re
 import time
+import json
+import html
 from aqt.utils import showInfo, askUser
-from .gui import logger
+from .logger import logger
+
+AI_HINTS_JSON_PATTERN = re.compile(
+    r'<div\b[^>]*class=["\'][^"\']*(?:ai-hints-json)[^"\']*["\'][^>]*>(.*?)</div>',
+    flags=re.DOTALL | re.IGNORECASE
+)
+
+AI_HINTS_REMOVE_PATTERN = re.compile(
+    r'(?:[\s\n\r]|<br\s*/?>|&nbsp;|<div>\s*</div>)*<div\b[^>]*class=["\'][^"\']*(?:ai-hints-json|ai-hints-container)[^"\']*["\'][^>]*>.*?</div>(?:[\s\n\r]|<br\s*/?>|&nbsp;|<div>\s*</div>)*',
+    flags=re.DOTALL | re.IGNORECASE
+)
+
+def extract_ai_hints(text):
+    """
+    Extracts AI-Hints payload from a field's HTML string,
+    and returns (cleaned_text, parsed_payload, toggles).
+    """
+    if not isinstance(text, str) or not text.strip():
+        return text, {}, {}
+
+    parsed_payloads = []
+    show_hints = True
+    show_options = True
+
+    # Find all matches of JSON blocks
+    for match in AI_HINTS_JSON_PATTERN.finditer(text):
+        raw_payload = match.group(1)
+        # Extract show/hide options/hints from the div wrapper
+        div_start = text.rfind('<div', 0, match.start(1))
+        if div_start != -1:
+            div_tag = text[div_start:match.start(1)]
+            if 'data-show-hints="false"' in div_tag:
+                show_hints = False
+            if 'data-show-options="false"' in div_tag:
+                show_options = False
+
+        if not raw_payload:
+            continue
+        cleaned = raw_payload.replace("&nbsp;", " ").replace("\xa0", " ")
+        cleaned = re.sub(r'</?[a-zA-Z][a-zA-Z0-9]*\b[^>]*>', '\n', cleaned)
+        try:
+            parsed = json.loads(html.unescape(cleaned))
+            if isinstance(parsed, dict):
+                parsed_payloads.append(parsed)
+        except Exception:
+            pass
+
+    # Remove all AI hints blocks (JSON and container) from the text
+    cleaned_text = re.sub(AI_HINTS_REMOVE_PATTERN, '', text).strip()
+
+    # Normalize and merge parsed payloads
+    merged_payload = {}
+    for p in parsed_payloads:
+        # Check if it is keyed (e.g., contains 'c1', 'c2', etc.)
+        is_keyed = False
+        if not ("hints" in p or "options" in p):
+            is_keyed = any(re.fullmatch(r"c\d+", str(key)) for key in p.keys())
+
+        if not is_keyed:
+            # Universal/legacy block, wrap it in "c1"
+            if "hints" in p or "options" in p:
+                p = {"c1": p}
+            else:
+                p = {}
+
+        for cloze_key, data in p.items():
+            if not isinstance(data, dict):
+                continue
+            if cloze_key not in merged_payload:
+                merged_payload[cloze_key] = {
+                    "hints": list(data.get("hints") or []),
+                    "options": list(data.get("options") or []),
+                }
+                if "correct_answer" in data:
+                    merged_payload[cloze_key]["correct_answer"] = data["correct_answer"]
+                for k, v in data.items():
+                    if k.startswith("_"):
+                        merged_payload[cloze_key][k] = v
+            else:
+                existing = merged_payload[cloze_key]
+                # Merge hints
+                seen_hints = {h.strip() for h in existing["hints"]}
+                for h in (data.get("hints") or []):
+                    if h.strip() not in seen_hints:
+                        existing["hints"].append(h)
+                        seen_hints.add(h.strip())
+                # Merge options
+                seen_options = {o.strip() for o in existing["options"]}
+                for o in (data.get("options") or []):
+                    if o.strip() not in seen_options:
+                        existing["options"].append(o)
+                        seen_options.add(o.strip())
+                # Merge correct answer
+                if "correct_answer" not in existing and "correct_answer" in data:
+                    existing["correct_answer"] = data["correct_answer"]
+                # Merge metadata
+                for k, v in data.items():
+                    if k.startswith("_") and k not in existing:
+                        existing[k] = v
+
+    toggles = {"hints": show_hints, "options": show_options}
+    return cleaned_text, merged_payload, toggles
+
+def merge_ai_hints_payloads(payloads):
+    merged = {}
+    for p in payloads:
+        if not p or not isinstance(p, dict):
+            continue
+        for cloze_key, data in p.items():
+            if not isinstance(data, dict):
+                continue
+            if cloze_key not in merged:
+                merged[cloze_key] = {
+                    "hints": list(data.get("hints") or []),
+                    "options": list(data.get("options") or []),
+                }
+                if "correct_answer" in data:
+                    merged[cloze_key]["correct_answer"] = data["correct_answer"]
+                for k, v in data.items():
+                    if k.startswith("_"):
+                        merged[cloze_key][k] = v
+            else:
+                existing = merged[cloze_key]
+                # Merge hints
+                seen_hints = {h.strip() for h in existing["hints"]}
+                for h in (data.get("hints") or []):
+                    if h.strip() not in seen_hints:
+                        existing["hints"].append(h)
+                        seen_hints.add(h.strip())
+                # Merge options
+                seen_options = {o.strip() for o in existing["options"]}
+                for o in (data.get("options") or []):
+                    if o.strip() not in seen_options:
+                        existing["options"].append(o)
+                        seen_options.add(o.strip())
+                # Merge correct answer
+                if "correct_answer" not in existing and "correct_answer" in data:
+                    existing["correct_answer"] = data["correct_answer"]
+                # Merge metadata
+                for k, v in data.items():
+                    if k.startswith("_") and k not in existing:
+                        existing[k] = v
+    return merged
+
+def serialize_ai_hints_payload(payload):
+    pretty_json = json.dumps(payload, indent=2, ensure_ascii=False)
+    return html.escape(pretty_json, quote=False)
+
+def build_ai_hints_block(payload, toggles):
+    addon_id = "2119980872"
+    attrs = f'data-ai-hints-addon-id="{addon_id}" contenteditable="false"'
+    if toggles.get("hints"):
+        attrs += ' data-show-hints="true"'
+    else:
+        attrs += ' data-show-hints="false"'
+    if toggles.get("options"):
+        attrs += ' data-show-options="true"'
+    else:
+        attrs += ' data-show-options="false"'
+        
+    serialized = serialize_ai_hints_payload(payload)
+    return f'<div class="ai-hints-json" {attrs} style="display:none">{serialized}</div>'
 
 try:
     from anki.consts import CARD_TYPE_LRN, CARD_TYPE_NEW, QUEUE_TYPE_NEW, QUEUE_TYPE_PREVIEW
@@ -317,6 +480,8 @@ def perform_merge(
     # Dictionary to collect merged values
     start = time.time()
     merged_values = {f_name: [] for f_name in field_mapping}
+    field_ai_payloads = {f_name: [] for f_name in field_mapping}
+    field_toggles = {f_name: {"hints": True, "options": True} for f_name in field_mapping}
 
     for note in selected_notes:
         note_keys = set(note.keys())
@@ -325,7 +490,15 @@ def perform_merge(
                 if src_f in note_keys:
                     val = note[src_f]
                     if val.strip():
-                        merged_values[f_name].append(val)
+                        cleaned_val, ai_payload, toggles = extract_ai_hints(val)
+                        if cleaned_val.strip():
+                            merged_values[f_name].append(cleaned_val)
+                        if ai_payload:
+                            field_ai_payloads[f_name].append(ai_payload)
+                        if "hints" in toggles:
+                            field_toggles[f_name]["hints"] = field_toggles[f_name]["hints"] and toggles["hints"]
+                        if "options" in toggles:
+                            field_toggles[f_name]["options"] = field_toggles[f_name]["options"] and toggles["options"]
 
     # Assign values to new note
     for f_name, list_values in merged_values.items():
@@ -333,6 +506,16 @@ def perform_merge(
             combined_text = custom_separator.join(list_values)
             if remove_cloze:
                 combined_text = remove_cloze_syntax(combined_text)
+            
+            ai_payloads = field_ai_payloads[f_name]
+            if ai_payloads:
+                merged_payload = merge_ai_hints_payloads(ai_payloads)
+                if merged_payload:
+                    ai_block = build_ai_hints_block(merged_payload, field_toggles[f_name])
+                    if combined_text.strip():
+                        combined_text = combined_text.strip() + "<br><br>" + ai_block
+                    else:
+                        combined_text = ai_block
             
             new_note[f_name] = combined_text
     logger.log(f"Prepared merged field values in {time.time() - start:.4f}s")

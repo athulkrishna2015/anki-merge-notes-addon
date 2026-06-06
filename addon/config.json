@@ -3,5 +3,7 @@
     "default_remove_cloze": true,
     "default_delete_originals": true,
     "default_preserve_review_history": true,
-    "default_open_new_note": true
+    "default_open_new_note": true,
+    "i_have_supported": false,
+    "last_shown_support_version": ""
 }

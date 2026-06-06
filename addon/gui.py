@@ -1,11 +1,18 @@
 import re
 import time
 from datetime import datetime
+import os
 
 from aqt import mw
 from aqt.browser import Browser
 from aqt.qt import *
 from aqt.utils import showInfo
+from aqt.webview import AnkiWebView
+
+from .tab_merge import MergeTab
+from .tab_options import OptionsTab
+from .tab_logs import LogsTab
+from .tab_support import SupportTab
 
 # --- Logging System ---
 class Logger:
@@ -22,7 +29,6 @@ class Logger:
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         entry = f"[{timestamp}] {message}"
         self._logs.append(entry)
-        # Limit log size
         if len(self._logs) > 1000:
             self._logs.pop(0)
             
@@ -115,27 +121,33 @@ def summarize_for_picker(text, limit=60):
 
 
 class MergeDialog(QDialog):
-    def __init__(self, browser: Browser, selected_notes, parent=None):
-        super().__init__(parent or browser)
+    def __init__(self, browser: Browser = None, selected_notes = None, parent = None, addon_id = None):
+        super().__init__(parent or browser or mw)
         self.browser = browser
-        self.selected_notes = selected_notes
+        self.selected_notes = selected_notes or []
         self.mw = mw
-        self.addon_id = __name__.split('.')[0]
+        self.addon_id = addon_id or __name__.split('.')[0]
         
         # Log startup
         config = self.mw.addonManager.getConfig(self.addon_id) or {}
+        self.config = config
         if config.get("clear_logs_on_startup", True):
             logger.clear()
-        logger.log(f"Opening MergeDialog for {len(self.selected_notes)} notes.")
+        
+        if self.selected_notes:
+            logger.log(f"Opening MergeDialog for {len(self.selected_notes)} notes.")
+            self.setWindowTitle("Merge Notes")
+        else:
+            logger.log("Opening MergeDialog in Config-only mode.")
+            self.setWindowTitle("Merge Notes Configuration")
 
-        self.setWindowTitle("Merge Notes")
         self.setMinimumWidth(600)
         self.setMinimumHeight(700)
 
-        # Collect unique source fields
-        self.source_fields = self.get_unique_source_fields()
+        # Collect unique source fields (only if notes selected)
+        self.source_fields = self.get_unique_source_fields() if self.selected_notes else []
         
-        # UI Elements that contain state
+        # UI Elements that contain state (Merge tab)
         self.target_model_cb = QComboBox()
         self.target_deck_cb = QComboBox()
         self.fields_scroll_area = QScrollArea()
@@ -155,38 +167,55 @@ class MergeDialog(QDialog):
         )
         self.open_new_note_cb = QCheckBox("Open/select newly created note in Browser")
         
+        # UI Elements that contain state (Options tab)
+        self.config_separator_input = QLineEdit()
+        self.config_remove_cloze_cb = QCheckBox("Remove Cloze Syntax (Keep Text Only)")
+        self.config_delete_cb = QCheckBox("Delete Original Notes After Merge")
+        self.config_preserve_review_history_cb = QCheckBox("Preserve Review History On Merged Card")
+        self.config_open_new_note_cb = QCheckBox("Open/Select Newly Created Note in Browser")
+        self.config_clear_logs_on_startup_cb = QCheckBox("Clear Logs on Startup")
+
         self.log_viewer = QTextEdit()
         self.log_viewer.setReadOnly(True)
         self.log_viewer.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
 
-        # Apply Config Defaults
-        last_sep = config.get("last_separator", config.get("default_separator", "<br><hr><br>"))
-        self.separator_input.setText(last_sep)
-        
-        last_rem = config.get("last_remove_cloze", config.get("default_remove_cloze", False))
-        self.remove_cloze_cb.setChecked(last_rem)
-        
-        last_del = config.get("last_delete_originals", config.get("default_delete_originals", False))
-        self.delete_originals_cb.setChecked(last_del)
+        # Apply Config Defaults to Merge tab UI controls
+        if self.selected_notes:
+            last_sep = config.get("last_separator", config.get("default_separator", "<br><hr><br>"))
+            self.separator_input.setText(last_sep)
+            
+            last_rem = config.get("last_remove_cloze", config.get("default_remove_cloze", False))
+            self.remove_cloze_cb.setChecked(last_rem)
+            
+            last_del = config.get("last_delete_originals", config.get("default_delete_originals", False))
+            self.delete_originals_cb.setChecked(last_del)
 
-        last_preserve = config.get(
-            "last_preserve_review_history",
-            config.get("default_preserve_review_history", True),
-        )
-        self.preserve_review_history_cb.setChecked(last_preserve)
-        
-        last_open = config.get("last_open_new_note", config.get("default_open_new_note", True))
-        self.open_new_note_cb.setChecked(last_open)
+            last_preserve = config.get(
+                "last_preserve_review_history",
+                config.get("default_preserve_review_history", True),
+            )
+            self.preserve_review_history_cb.setChecked(last_preserve)
+            
+            last_open = config.get("last_open_new_note", config.get("default_open_new_note", True))
+            self.open_new_note_cb.setChecked(last_open)
 
+        # Apply Config Defaults to Options tab UI controls
+        self.config_separator_input.setText(config.get("default_separator", "<br><hr><br>"))
+        self.config_remove_cloze_cb.setChecked(config.get("default_remove_cloze", False))
+        self.config_delete_cb.setChecked(config.get("default_delete_originals", False))
+        self.config_preserve_review_history_cb.setChecked(config.get("default_preserve_review_history", True))
+        self.config_open_new_note_cb.setChecked(config.get("default_open_new_note", True))
+        self.config_clear_logs_on_startup_cb.setChecked(config.get("clear_logs_on_startup", True))
 
         # Layout mapping target field name to its QListWidget of source fields.
         self.target_field_widgets = {}
 
         self.setup_ui()
-        self.populate_models_and_decks()
-        self.populate_review_history_cards()
-        self.update_review_history_controls()
-        self.update_fields_ui()
+        if self.selected_notes:
+            self.populate_models_and_decks()
+            self.populate_review_history_cards()
+            self.update_review_history_controls()
+            self.update_fields_ui()
         
         # Live Logs Setup
         logger.add_listener(self.on_new_log)
@@ -225,92 +254,52 @@ class MergeDialog(QDialog):
 
     def setup_ui(self):
         layout = QVBoxLayout()
-        
         self.tabs = QTabWidget()
         
-        # --- TAB 1: Merge Options ---
-        merge_tab = QWidget()
-        merge_layout = QVBoxLayout()
+        # --- TAB 1: Merge Options (only if notes selected) ---
+        if self.selected_notes:
+            self.merge_tab = MergeTab(self)
+            self.tabs.addTab(self.merge_tab, "Merge")
+            
+        # --- TAB 2: Options (Default settings) ---
+        self.config_tab = OptionsTab(self)
+        self.tabs.addTab(self.config_tab, "Options")
         
-        info_label = QLabel(f"<b>Merging {len(self.selected_notes)} notes.</b>")
-        merge_layout.addWidget(info_label)
+        # --- TAB 3: Logs ---
+        self.logs_tab = LogsTab(self)
+        self.tabs.addTab(self.logs_tab, "Logs")
 
-        # Target Note Type Selection
-        model_layout = QHBoxLayout()
-        model_layout.addWidget(QLabel("Target Note Type:"))
-        self.target_model_cb.currentIndexChanged.connect(self.update_fields_ui)
-        model_layout.addWidget(self.target_model_cb)
-        merge_layout.addLayout(model_layout)
-
-        # Target Deck Selection
-        deck_layout = QHBoxLayout()
-        deck_layout.addWidget(QLabel("Target Deck:"))
-        deck_layout.addWidget(self.target_deck_cb)
-        merge_layout.addLayout(deck_layout)
-
-        # Fields Mapping setup
-        merge_layout.addWidget(QLabel("<b>Field Mappings (Source -> Target):</b>"))
-        
-        self.fields_widget.setLayout(self.fields_layout)
-        self.fields_scroll_area.setWidgetResizable(True)
-        self.fields_scroll_area.setWidget(self.fields_widget)
-        merge_layout.addWidget(self.fields_scroll_area)
-
-        # Options layout
-        options_layout = QFormLayout()
-        options_layout.addRow("Custom Separator:", self.separator_input)
-        options_layout.addRow("", self.remove_cloze_cb)
-        options_layout.addRow("", self.delete_originals_cb)
-
-        self.preserve_review_history_cb.toggled.connect(self.update_review_history_controls)
-        options_layout.addRow("", self.preserve_review_history_cb)
-        options_layout.addRow(self.review_history_source_label, self.review_history_card_cb)
-        self.review_history_warning_label.setWordWrap(True)
-        options_layout.addRow("", self.review_history_warning_label)
-        
-        options_layout.addRow("", self.open_new_note_cb)
-
-        merge_layout.addLayout(options_layout)
-        merge_tab.setLayout(merge_layout)
-        
-        # --- TAB 2: Logs ---
-        logs_tab = QWidget()
-        logs_layout = QVBoxLayout()
-        logs_layout.addWidget(self.log_viewer)
-        
-        logs_btn_layout = QHBoxLayout()
-        copy_logs_btn = QPushButton("Copy Logs")
-        copy_logs_btn.clicked.connect(lambda: QApplication.clipboard().setText(logger.get_logs()))
-        logs_btn_layout.addWidget(copy_logs_btn)
-        
-        clear_logs_btn = QPushButton("Clear Logs")
-        clear_logs_btn.clicked.connect(lambda: [logger.clear(), self.refresh_logs()])
-        logs_btn_layout.addWidget(clear_logs_btn)
-        logs_layout.addLayout(logs_btn_layout)
-        logs_tab.setLayout(logs_layout)
-        
-        self.tabs.addTab(merge_tab, "Merge")
-        self.tabs.addTab(logs_tab, "Logs")
+        # --- TAB 4: Support ---
+        self.support_tab = SupportTab(self)
+        self.tabs.addTab(self.support_tab, "Support")
         
         layout.addWidget(self.tabs)
 
         # Buttons
         self.btn_layout = QHBoxLayout()
         
-        self.merge_btn = QPushButton("Merge")
-        self.merge_btn.clicked.connect(self.on_merge_stay_open)
-        self.btn_layout.addWidget(self.merge_btn)
-        
-        self.merge_close_btn = QPushButton("Merge and Close")
-        self.merge_close_btn.clicked.connect(self.on_merge_and_close)
-        self.btn_layout.addWidget(self.merge_close_btn)
-        
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.clicked.connect(self.reject)
-        self.btn_layout.addWidget(self.cancel_btn)
+        if self.selected_notes:
+            self.merge_btn = QPushButton("Merge")
+            self.merge_btn.clicked.connect(self.on_merge_stay_open)
+            self.btn_layout.addWidget(self.merge_btn)
+            
+            self.merge_close_btn = QPushButton("Merge and Close")
+            self.merge_close_btn.clicked.connect(self.on_merge_and_close)
+            self.btn_layout.addWidget(self.merge_close_btn)
+            
+            self.cancel_btn = QPushButton("Cancel")
+            self.cancel_btn.clicked.connect(self.reject)
+            self.btn_layout.addWidget(self.cancel_btn)
+        else:
+            self.ok_btn = QPushButton("OK")
+            self.ok_btn.clicked.connect(self.accept_config)
+            self.btn_layout.addWidget(self.ok_btn)
+            
+            self.cancel_btn = QPushButton("Cancel")
+            self.cancel_btn.clicked.connect(self.reject)
+            self.btn_layout.addWidget(self.cancel_btn)
         
         layout.addLayout(self.btn_layout)
-        
         self.setLayout(layout)
 
     def populate_review_history_cards(self):
@@ -372,8 +361,6 @@ class MergeDialog(QDialog):
         start = time.time()
         config = self.mw.addonManager.getConfig(self.addon_id) or {}
 
-        # If all selected notes share the same note type, prefer that type
-        # over the cached last_model_id so the user doesn't have to pick it.
         common_model_id = None
         try:
             model_ids = set()
@@ -422,7 +409,6 @@ class MergeDialog(QDialog):
 
     def update_fields_ui(self):
         start = time.time()
-        # Clear existing layout
         while self.fields_layout.count():
             child = self.fields_layout.takeAt(0)
             if child.widget():
@@ -528,12 +514,12 @@ class MergeDialog(QDialog):
         config["last_open_new_note"] = open_new_note
         config["last_target_model_id"] = target_model_id
         config["last_target_deck_id"] = target_deck_id
-        # We don't save clear_logs_on_startup here as it's a global config only changed in ConfigDialog
         self.mw.addonManager.writeConfig(self.addon_id, config)
         logger.log("Persisted dialog state.")
 
     def on_merge_stay_open(self):
-        self.tabs.setCurrentIndex(1)  # Switch to Logs tab
+        # Switch to Logs tab (which is index 2 if Merge is index 0, Options index 1)
+        self.tabs.setCurrentIndex(2)
         if self.perform_merge_action():
             self.merge_btn.setEnabled(False)
             self.merge_close_btn.setEnabled(False)
@@ -613,8 +599,6 @@ class MergeDialog(QDialog):
         )
 
         if new_note_id:
-            # Refresh the browser without a full mw.reset(), which can
-            # interfere with custom undo bookkeeping on some Anki versions.
             if open_new_note:
                 try:
                     if hasattr(self.browser, 'searchFor'):
@@ -630,20 +614,11 @@ class MergeDialog(QDialog):
             else:
                 try:
                     if hasattr(self.browser, "table") and hasattr(self.browser.table, "update_list"):
-                        # Save scroll position
                         vbar = self.browser.table.verticalScrollBar()
                         old_pos = vbar.value()
-                        
-                        # Modern Anki: update_list() correctly removes deleted/ghost notes 
-                        # from the browser view without triggering a full search reset 
-                        # or forcing the scrollbar to jump to the top.
                         self.browser.table.update_list()
-                        
-                        # Restore scroll position
                         QTimer.singleShot(0, lambda: vbar.setValue(old_pos))
                     elif hasattr(self.browser, 'searchFor'):
-                        # Fallback for older versions: mw.requireReset() is safer 
-                        # than searchFor() for avoiding jarring jumps.
                         self.mw.requireReset()
                     else:
                         self.mw.requireReset()
@@ -655,6 +630,20 @@ class MergeDialog(QDialog):
             return True
         return False
 
+    def accept_config(self):
+        self.config["default_separator"] = self.config_separator_input.text()
+        self.config["default_remove_cloze"] = self.config_remove_cloze_cb.isChecked()
+        self.config["default_delete_originals"] = self.config_delete_cb.isChecked()
+        self.config["default_preserve_review_history"] = (
+            self.config_preserve_review_history_cb.isChecked()
+        )
+        self.config["default_open_new_note"] = self.config_open_new_note_cb.isChecked()
+        self.config["clear_logs_on_startup"] = self.config_clear_logs_on_startup_cb.isChecked()
+        
+        self.mw.addonManager.writeConfig(self.addon_id, self.config)
+        self.accept()
+
+
 def show_merge_dialog(browser: Browser, selected_notes):
     valid_selected_notes = filter_existing_note_ids(mw.col, selected_notes)
     if not valid_selected_notes:
@@ -662,4 +651,13 @@ def show_merge_dialog(browser: Browser, selected_notes):
         return
 
     dialog = MergeDialog(browser, valid_selected_notes)
+    dialog.exec()
+
+
+def show_config(addon_id, start_tab_name=None):
+    dialog = MergeDialog(None, None, parent=mw, addon_id=addon_id)
+    if start_tab_name == "Support":
+        idx = dialog.tabs.indexOf(dialog.support_tab)
+        if idx != -1:
+            dialog.tabs.setCurrentIndex(idx)
     dialog.exec()
