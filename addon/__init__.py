@@ -31,6 +31,19 @@ gui_hooks.browser_will_show_context_menu.append(on_browser_context_menu_init)
 
 def check_and_show_support_on_startup():
     addon_id = __name__.split('.')[0]
+    
+    # Ensure Anki is fully loaded, visible, and not showing any modal dialogs/sync windows
+    if not mw.isVisible() or QApplication.activeModalWidget() is not None:
+        QTimer.singleShot(1000, check_and_show_support_on_startup)
+        return
+
+    try:
+        if mw.progress.busy():
+            QTimer.singleShot(1000, check_and_show_support_on_startup)
+            return
+    except Exception:
+        pass
+
     import os
     try:
         base_dir = os.path.dirname(__file__)
@@ -38,11 +51,19 @@ def check_and_show_support_on_startup():
         with open(version_path, "r", encoding="utf-8") as f:
             version = f.read().strip()
     except Exception:
-        version = "1.2.5"
+        version = "1.3.0"
 
     config = mw.addonManager.getConfig(addon_id) or {}
     if config.get("i_have_supported", False):
         return
+
+    # Check if the user opted out via the checkbox stored in addon metadata
+    try:
+        meta = mw.addonManager.addonMeta(addon_id) or {}
+        if meta.get("supporter_opt_out", False):
+            return
+    except Exception:
+        pass
 
     last_shown = config.get("last_shown_support_version", "")
     if last_shown == version:

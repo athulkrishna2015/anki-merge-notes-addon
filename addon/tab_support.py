@@ -17,12 +17,16 @@ from aqt.qt import (
     Qt,
 )
 from aqt.webview import AnkiWebView
-from .widgets import ADDON_PACKAGE
 
-class SupportTabMixin:
-    def _create_support_tab(self):
-        self.support_tab = QWidget()
-        layout = QVBoxLayout(self.support_tab)
+class SupportTab(QWidget):
+    def __init__(self, dialog, parent=None):
+        super().__init__(parent)
+        self.dialog = dialog
+        self.addon_id = dialog.addon_id
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
 
         instr = QLabel(
@@ -34,7 +38,6 @@ class SupportTabMixin:
         instr.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(instr)
 
-        
         # Supporter Opt-out (Moved to top near message)
         self.supporter_check = QCheckBox("I have supported this addon (Hide automatic update welcome)")
         self.supporter_check.setToolTip("Checking this will prevent the Support tab from opening automatically after future updates.")
@@ -43,7 +46,7 @@ class SupportTabMixin:
         layout.addSpacing(10)
 
         # Scroll area for QR codes
-        scroll = QScrollArea(self.support_tab)
+        scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll_content = QWidget()
         self.qr_list = QVBoxLayout(scroll_content)
@@ -53,7 +56,7 @@ class SupportTabMixin:
         layout.addWidget(scroll)
 
         # Ko-fi Widget (Embedded Script via AnkiWebView)
-        self.support_webview = AnkiWebView(self.support_tab)
+        self.support_webview = AnkiWebView(self)
         self.support_webview.setFixedHeight(42)
         kofi_html = """
         <html>
@@ -75,7 +78,7 @@ class SupportTabMixin:
         self.support_webview.setHtml(kofi_html)
         layout.addWidget(self.support_webview)
 
-        base_path = os.path.dirname(os.path.dirname(__file__))
+        base_path = os.path.dirname(__file__)
 
         def add_qr(name, address, filename):
             container = QWidget()
@@ -133,15 +136,14 @@ class SupportTabMixin:
         add_qr("ETH", "0xce6899e4903EcB08bE5Be65E44549fadC3F45D27", "ETH.jpg")
 
         self.load_supporter_state()
-        return self.support_tab
 
     def load_supporter_state(self):
-        meta = mw.addonManager.addonMeta(ADDON_PACKAGE)
+        meta = mw.addonManager.addonMeta(self.addon_id)
         self.supporter_check.blockSignals(True)
         self.supporter_check.setChecked(meta.get("supporter_opt_out", False))
         self.supporter_check.blockSignals(False)
 
     def on_supporter_check_toggled(self, checked):
-        meta = mw.addonManager.addonMeta(ADDON_PACKAGE)
+        meta = mw.addonManager.addonMeta(self.addon_id)
         meta["supporter_opt_out"] = checked
-        mw.addonManager.writeAddonMeta(ADDON_PACKAGE, meta)
+        mw.addonManager.writeAddonMeta(self.addon_id, meta)

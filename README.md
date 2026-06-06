@@ -76,6 +76,12 @@ If you find this add-on useful, please consider supporting its development:
 
 ## Changelog
 
+**2026-06-06 (v1.3.0)**
+- **Added Support Tab:** Integrated a dedicated "Support" tab inside the Merge dialog showing Ko-fi and QR code payment/address options.
+- **Fixed GUI Import Crash:** Resolved a startup crash (`ModuleNotFoundError`) due to refactored submodules.
+- **Robust Startup Safety:** Implemented deferred startup checks that detect active modal dialogs, sync events, and Anki busy state to prevent startup crashes when opening the Welcome/Support dialog.
+- **Fixed QR Images:** Corrected the image paths to properly load QR code JPGs from the addon's subfolder.
+
 **2026-05-09 (v1.2.5)**
 - **Restored Undo:** Fixed a conflict where history preservation would break Anki's Undo stack; Ctrl+Z now works perfectly again.
 - **Eliminated UI Hangs:** Review history is now copied in a background thread with automatic lock retries, ensuring the Anki UI never freezes or hangs.
