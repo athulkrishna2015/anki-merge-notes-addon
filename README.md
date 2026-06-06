@@ -77,6 +77,9 @@ If you find this add-on useful, please consider supporting its development:
 ## Changelog
 
 **2026-06-06 (v1.3.0)**
+- **Unified Configuration GUI:** Removed the separate preferences dialog and integrated all configuration settings under the new `Options` tab in the main `Merge Notes` window.
+- **Clean Submodule Architecture:** Split the GUI tabs (`Merge`, `Options`, `Logs`, `Support`) into dedicated submodules (`tab_*.py`) for better maintainability.
+- **AI Hints Merging:** Added support for parsing, merging, and rendering embedded `ai-hints-json` blocks from multiple merged source notes into a single unified metadata block.
 - **Added Support Tab:** Integrated a dedicated "Support" tab inside the Merge dialog showing Ko-fi and QR code payment/address options.
 - **Fixed GUI Import Crash:** Resolved a startup crash (`ModuleNotFoundError`) due to refactored submodules.
 - **Robust Startup Safety:** Implemented deferred startup checks that detect active modal dialogs, sync events, and Anki busy state to prevent startup crashes when opening the Welcome/Support dialog.
